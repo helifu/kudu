@@ -134,6 +134,11 @@ class ColumnPredicate {
   // Creates a new predicate which matches no values.
   static ColumnPredicate None(ColumnSchema column);
 
+  // Creates a new BloomFilter predicate for the column.
+  //
+  // 
+  static ColumnPredicate BloomFilter(ColumnSchema column, const impala::BloomFilter* bloomfilter);
+
   // Returns the type of this predicate.
   PredicateType predicate_type() const {
     return predicate_type_;

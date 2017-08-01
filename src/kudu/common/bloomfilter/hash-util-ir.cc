@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "util/hash-util.h"
+#include "kudu/common/bloomfilter/hash-util.h"
 
 // Define the hashing functions for llvm.  They are not used by anything that is
 // cross compiled and without this, would get stripped by the clang optimizer.

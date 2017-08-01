@@ -24,7 +24,7 @@
 #include <vector>
 #include <boost/cstdint.hpp>
 
-#include "common/logging.h"
+#include <glog/logging.h>
 
 namespace impala {
 
@@ -145,7 +145,7 @@ class CpuInfo {
     return model_name_;
   }
 
-  static std::string DebugString();
+  /*static std::string DebugString();*/
 
   /// A utility class for temporarily disabling CPU features. Usage:
   ///
