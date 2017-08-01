@@ -139,5 +139,24 @@ Status InListPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) {
   return Status::OK();
 }
 
+BloomFilterPredicateData::BloomFilterPredicateData(ColumnSchema col, 
+                                                   impala::BloomFilter* value)
+    : col_(col),
+    val_(value) {
+}
+
+BloomFilterPredicateData::~BloomFilterPredicateData() {
+}
+
+Status BloomFilterPredicateData::AddToScanSpec(ScanSpec* spec, Arena* arena) {
+  /*void* val_void;
+  RETURN_NOT_OK(val_->data_->CheckTypeAndGetPointer(col_.name(),
+                                                    col_.type_info()->physical_type(),
+                                                    &val_void));*/
+  spec->AddPredicate(ColumnPredicate::BloomFilter(col_, val_));
+
+  return Status::OK();
+}
+
 } // namespace client
 } // namespace kudu

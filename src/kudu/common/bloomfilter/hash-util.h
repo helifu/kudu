@@ -19,11 +19,10 @@
 #ifndef IMPALA_UTIL_HASH_UTIL_H
 #define IMPALA_UTIL_HASH_UTIL_H
 
-#include "common/logging.h"
-#include "common/compiler-util.h"
+#include "kudu/common/bloomfilter/compiler-util.h"
 
-#include "util/cpu-info.h"
-#include "util/sse-util.h"
+#include "kudu/common/bloomfilter/cpu-info.h"
+#include "kudu/common/bloomfilter/sse-util.h"
 
 namespace impala {
 
