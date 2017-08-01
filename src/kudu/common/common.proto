@@ -28,6 +28,7 @@ package kudu;
 
 option java_package = "org.apache.kudu";
 
+import "kudu/common/bloomfilter/bloom-filter.proto"
 import "kudu/util/compression/compression.proto";
 import "kudu/util/pb_util.proto";
 
@@ -329,11 +330,23 @@ message ColumnPredicatePB {
 
   message IsNull {}
 
+  message BloomFilter {
+    // The inclusive lower bound.
+    optional bytes lower = 1 [(kudu.REDACT) = true];
+
+    // The exclusive upper bound.
+    optional bytes upper = 2 [(kudu.REDACT) = true];
+
+    // bloom filter which comes from Impala.
+    optional BloomFilterPB bloomfilter = 3;
+  }
+
   oneof predicate {
     Range range = 2;
     Equality equality = 3;
     IsNotNull is_not_null = 4;
     InList in_list = 5;
     IsNull is_null = 6;
+    BloomFilter bloom_filter = 7;
   }
 }
