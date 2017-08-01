@@ -25,11 +25,11 @@
 
 #include <immintrin.h>
 
-#include "kudu/common/bloomfilter/compiler-util.h"
-//#include "gen-cpp/ImpalaInternalService_types.h"
-#include "kudu/gutil/macros.h"
-//#include "runtime/buffered-block-mgr.h"
-#include "kudu/common/bloomfilter/hash-util.h"
+#include "common/compiler-util.h"
+#include "gen-cpp/ImpalaInternalService_types.h"
+#include "gutil/macros.h"
+#include "runtime/buffered-block-mgr.h"
+#include "util/hash-util.h"
 
 namespace impala {
 

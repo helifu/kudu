@@ -15,15 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/common/bloomfilter/bloom-filter.h"
+#include "util/bloom-filter.h"
 
 #include <stdlib.h>
 
 #include <algorithm>
 
-#include <glog/logging.h>
-
-#include "kudu/common/bloomfilter/hash-util.h"
+#include "common/logging.h"
+#include "runtime/runtime-state.h"
+#include "util/hash-util.h"
 
 using namespace std;
 

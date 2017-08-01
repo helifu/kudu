@@ -978,21 +978,6 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   ///   to add this predicate to a KuduScanner.
   KuduPredicate* NewIsNullPredicate(const Slice& col_name);
 
-  /// Create a new BloomFilter predicate which can be used for scanners on 
-  /// this table.
-  /// 
-  /// @param [in] col_name
-  ///   Name of the column to which the predicate applies
-  /// @param [in] value
-  ///   bloom filter which the column will be matched against.
-  /// @return Raw pointer to an BloomFilter predicate. The caller owns the
-  ///   predicate until it is passed into KuduScanner::AddConjunctPredicate().
-  ///   In the case of an error (e.g. an invalid column name), a non-NULL
-  ///   value is still returned. The error will be returned when attempting
-  ///   to add this predicate to a KuduScanner.
-  KuduPredicate* NewBloomFilterPredicate(const Slice& col_name,
-                                         impala::BloomFilter* value);
-
   /// @return The KuduClient object associated with the table. The caller
   ///   should not free the returned pointer.
   KuduClient* client() const;

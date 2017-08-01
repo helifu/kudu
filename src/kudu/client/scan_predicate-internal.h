@@ -160,26 +160,6 @@ class IsNullPredicateData : public KuduPredicate::Data {
   ColumnSchema col_;
 };
 
-// A list predicate for a column and a list of constant values.
-class BloomFilterPredicateData: public KuduPredicate::Data {
-public:
-  BloomFilterPredicateData(ColumnSchema col, impala::BloomFilter* value);
-
-  virtual ~BloomFilterPredicateData();
-
-  Status AddToScanSpec(ScanSpec* spec, Arena* arena) override;
-
-  BloomFilterPredicateData* Clone() const override {
-    return new BloomFilterPredicateData(col_, val_->Clone());
-  }
-
-private:
-    friend class KuduScanner;
-
-    ColumnSchema col_;
-    gscoped_ptr<impala::BloomFilter> val_;
-};
-
 } // namespace client
 } // namespace kudu
 #endif /* KUDU_CLIENT_SCAN_PREDICATE_INTERNAL_H */

@@ -841,19 +841,6 @@ KuduPredicate* KuduTable::NewIsNullPredicate(const Slice& col_name) {
   });
 }
 
-KuduPredicate* KuduTable::NewBloomFilterPredicate(const Slice& col_name, 
-                                                  impala::BloomFilter* value) {
-  // We always take ownership of value; this ensures cleanup if the predicate is invalid.
-  auto cleanup = MakeScopedCleanup([&]() {
-    delete value;
-  });
-  return data_->MakePredicate(col_name, [&](const ColumnSchema& col_schema) {
-    // Ownership of values is passed to the valid returned predicate.
-    cleanup.cancel();
-    return new KuduPredicate(new BloomFilterPredicateData(col_schema, value));
-  });
-}
-
 ////////////////////////////////////////////////////////////
 // Error
 ////////////////////////////////////////////////////////////

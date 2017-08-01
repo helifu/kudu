@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/common/bloomfilter/cpu-info.h"
+#include "util/cpu-info.h"
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
@@ -34,7 +34,12 @@
 #include <boost/filesystem.hpp>
 #include <sys/sysinfo.h>
 
-#include "kudu/gutil/strings/substitute.h"
+#include "common/config.h"
+#include "gutil/strings/substitute.h"
+#include "util/pretty-printer.h"
+#include "util/string-parser.h"
+
+#include "common/names.h"
 
 using boost::algorithm::contains;
 using boost::algorithm::trim;
@@ -320,42 +325,42 @@ void CpuInfo::GetCacheInfo(long cache_sizes[NUM_CACHE_LEVELS],
 #endif
 }
 
-//string CpuInfo::DebugString() {
-//  DCHECK(initialized_);
-//  stringstream stream;
-//  long cache_sizes[NUM_CACHE_LEVELS];
-//  long cache_line_sizes[NUM_CACHE_LEVELS];
-//  GetCacheInfo(cache_sizes, cache_line_sizes);
-//
-//  string L1 = Substitute("L1 Cache: $0 (Line: $1)",
-//      PrettyPrinter::Print(cache_sizes[L1_CACHE], TUnit::BYTES),
-//      PrettyPrinter::Print(cache_line_sizes[L1_CACHE], TUnit::BYTES));
-//  string L2 = Substitute("L2 Cache: $0 (Line: $1)",
-//      PrettyPrinter::Print(cache_sizes[L2_CACHE], TUnit::BYTES),
-//      PrettyPrinter::Print(cache_line_sizes[L2_CACHE], TUnit::BYTES));
-//  string L3 = Substitute("L3 Cache: $0 (Line: $1)",
-//      PrettyPrinter::Print(cache_sizes[L3_CACHE], TUnit::BYTES),
-//      PrettyPrinter::Print(cache_line_sizes[L3_CACHE], TUnit::BYTES));
-//  stream << "Cpu Info:" << endl
-//         << "  Model: " << model_name_ << endl
-//         << "  Cores: " << num_cores_ << endl
-//         << "  Max Possible Cores: " << max_num_cores_ << endl
-//         << "  " << L1 << endl
-//         << "  " << L2 << endl
-//         << "  " << L3 << endl
-//         << "  Hardware Supports:" << endl;
-//  for (int i = 0; i < num_flags; ++i) {
-//    if (IsSupported(flag_mappings[i].flag)) {
-//      stream << "    " << flag_mappings[i].name << endl;
-//    }
-//  }
-//  stream << "  Numa Nodes: " << max_num_numa_nodes_ << endl;
-//  stream << "  Numa Nodes of Cores:";
-//  for (int core = 0; core < max_num_cores_; ++core) {
-//    stream << " " << core << "->" << core_to_numa_node_[core] << " |";
-//  }
-//  stream << endl;
-//  return stream.str();
-//}
+string CpuInfo::DebugString() {
+  DCHECK(initialized_);
+  stringstream stream;
+  long cache_sizes[NUM_CACHE_LEVELS];
+  long cache_line_sizes[NUM_CACHE_LEVELS];
+  GetCacheInfo(cache_sizes, cache_line_sizes);
+
+  string L1 = Substitute("L1 Cache: $0 (Line: $1)",
+      PrettyPrinter::Print(cache_sizes[L1_CACHE], TUnit::BYTES),
+      PrettyPrinter::Print(cache_line_sizes[L1_CACHE], TUnit::BYTES));
+  string L2 = Substitute("L2 Cache: $0 (Line: $1)",
+      PrettyPrinter::Print(cache_sizes[L2_CACHE], TUnit::BYTES),
+      PrettyPrinter::Print(cache_line_sizes[L2_CACHE], TUnit::BYTES));
+  string L3 = Substitute("L3 Cache: $0 (Line: $1)",
+      PrettyPrinter::Print(cache_sizes[L3_CACHE], TUnit::BYTES),
+      PrettyPrinter::Print(cache_line_sizes[L3_CACHE], TUnit::BYTES));
+  stream << "Cpu Info:" << endl
+         << "  Model: " << model_name_ << endl
+         << "  Cores: " << num_cores_ << endl
+         << "  Max Possible Cores: " << max_num_cores_ << endl
+         << "  " << L1 << endl
+         << "  " << L2 << endl
+         << "  " << L3 << endl
+         << "  Hardware Supports:" << endl;
+  for (int i = 0; i < num_flags; ++i) {
+    if (IsSupported(flag_mappings[i].flag)) {
+      stream << "    " << flag_mappings[i].name << endl;
+    }
+  }
+  stream << "  Numa Nodes: " << max_num_numa_nodes_ << endl;
+  stream << "  Numa Nodes of Cores:";
+  for (int core = 0; core < max_num_cores_; ++core) {
+    stream << " " << core << "->" << core_to_numa_node_[core] << " |";
+  }
+  stream << endl;
+  return stream.str();
+}
 
 }

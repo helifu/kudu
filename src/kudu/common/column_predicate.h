@@ -22,7 +22,6 @@
 #include <vector>
 
 #include "kudu/common/schema.h"
-#include "kudu/common/bloomfilter/bloom-filter.h"
 
 namespace kudu {
 
@@ -53,10 +52,6 @@ enum class PredicateType {
   // A predicate which evaluates to true if the column value is present in
   // a value list.
   InList,
-
-  // A predicate which evaluates to true if the column value is present in
-  // a bloom filter.
-  BloomFilter,
 };
 
 // A predicate which can be evaluated over a block of column values.
@@ -133,11 +128,6 @@ class ColumnPredicate {
 
   // Creates a new predicate which matches no values.
   static ColumnPredicate None(ColumnSchema column);
-
-  // Creates a new BloomFilter predicate for the column.
-  //
-  // 
-  static ColumnPredicate BloomFilter(ColumnSchema column, const impala::BloomFilter* bloomfilter);
 
   // Returns the type of this predicate.
   PredicateType predicate_type() const {
@@ -305,9 +295,6 @@ class ColumnPredicate {
 
   // The list of values to check column against if this is an InList predicate.
   std::vector<const void*> values_;
-
-  // The bloom filter to check if the column value is in it.
-  impala::BloomFilter* bf_;
 };
 
 // Compares predicates according to selectivity. Predicates that match fewer
