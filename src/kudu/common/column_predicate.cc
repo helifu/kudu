@@ -51,6 +51,18 @@ ColumnPredicate::ColumnPredicate(PredicateType predicate_type,
   values_.swap(*values);
 }
 
+ColumnPredicate::ColumnPredicate(PredicateType predicate_type,
+                                 ColumnSchema column,
+                                 const void* lower,
+                                 const void* upper,
+                                 impala::BloomFilter* value)
+    : predicate_type_(predicate_type),
+      column_(move(column)),
+      lower_(lower),
+      upper_(upper),
+      bf_(value) {
+}
+
 ColumnPredicate ColumnPredicate::Equality(ColumnSchema column, const void* value) {
   CHECK(value != nullptr);
   return ColumnPredicate(PredicateType::Equality, move(column), value, nullptr);
@@ -153,10 +165,19 @@ ColumnPredicate ColumnPredicate::None(ColumnSchema column) {
   return ColumnPredicate(PredicateType::None, move(column), nullptr, nullptr);
 }
 
+ColumnPredicate ColumnPredicate::BloomFilter(ColumnSchema column, 
+                                             const void* lower, 
+                                             const void* upper, 
+                                             impala::BloomFilter* value) {
+  CHECK(value != nullptr);
+  return ColumnPredicate(PredicateType::BloomFilter, move(column), lower, upper, value);
+}
+
 void ColumnPredicate::SetToNone() {
   predicate_type_ = PredicateType::None;
   lower_ = nullptr;
   upper_ = nullptr;
+  bf_ = nullptr;
 }
 
 void ColumnPredicate::Simplify() {
@@ -207,6 +228,7 @@ void ColumnPredicate::Simplify() {
         predicate_type_ = PredicateType::Equality;
         lower_ = values_[0];
         values_.clear();
+        bf_ = nullptr;
       } else if (type_info->type() == BOOL) {
         // If this is a boolean IN list with both true and false in the list,
         // then we can just convert it to IS NOT NULL. This same simplification
@@ -216,9 +238,25 @@ void ColumnPredicate::Simplify() {
         lower_ = nullptr;
         upper_ = nullptr;
         values_.clear();
+        bf_ = nullptr;
       }
       return;
     };
+    case PredicateType::BloomFilter: {
+      // BloomFilter vs Range 
+      if (lower_ != nullptr && upper_ != nullptr) {
+        if (type_info->Compare(lower_, upper_) >= 0) {
+          // If the range bounds are empty then no results can be returned.
+          SetToNone();
+        } else if (type_info->AreConsecutive(lower_, upper_)) {
+            // If the values are consecutive, then it is an equality bound.
+            predicate_type_ = PredicateType::Equality;
+            upper_ = nullptr;
+            bf_ = nullptr;
+        }
+      }
+      return;
+    }
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -247,6 +285,10 @@ void ColumnPredicate::Merge(const ColumnPredicate& other) {
       MergeIntoInList(other);
       return;
     };
+    case PredicateType::BloomFilter: {
+      MergeIntoBloomFilter(other);
+      return;
+    }
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -313,6 +355,14 @@ void ColumnPredicate::MergeIntoRange(const ColumnPredicate& other) {
       Simplify();
       return;
     };
+    case PredicateType::BloomFilter: {
+      // There is only a bloom filter condition while a new BloomFilter 
+      // predicate is merged into existing predicate. That means there is
+      // no range conditions in 'other' which is the new predicate.
+      bf_ = other.bf_.release();
+      predicate_type_ = PredicateType::BloomFilter;
+      return;
+    }
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -350,6 +400,13 @@ void ColumnPredicate::MergeIntoEquality(const ColumnPredicate& other) {
       }
       return;
     };
+    case PredicateType::BloomFilter: {
+      // The equality value needs to be in the BloomFilter.
+      if (!other.CheckValueInBloomFilter(lower_)) {
+        SetToNone();
+      }
+      return;
+    }
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -368,6 +425,7 @@ void ColumnPredicate::MergeIntoIsNotNull(const ColumnPredicate &other) {
       lower_ = other.lower_;
       upper_ = other.upper_;
       values_ = other.values_;
+      bf_ = other.bf_.release();
       return;
     }
   }
@@ -489,6 +547,101 @@ void ColumnPredicate::MergeIntoInList(const ColumnPredicate &other) {
       Simplify();
       return;
     };
+    case PredicateType::BloomFilter: {
+      // Iterator through the values_ list and remove elements that do not exist
+      // in the bloom filter.
+      values_.erase(std::remove_if(values_.begin(), values_.end(),
+                                   [&] (const void* v) {
+                                     return !(other.CheckValueInBloomFilter(v));
+                                   }), values_.end());
+      Simplify();
+      return;
+    }
+  }
+  LOG(FATAL) << "unknown predicate type";
+}
+
+void ColumnPredicate::MergeIntoBloomFilter(const ColumnPredicate& other) {
+  CHECK(predicate_type_ == PredicateType::BloomFilter);
+
+  switch (other.predicate_type()) {
+    case PredicateType::None: {
+      SetToNone();
+      return;
+    }
+    case PredicateType::Range: {
+      // Set the lower bound to the larger of the two.
+      if (other.lower_ != nullptr &&
+          (lower_ == nullptr || column_.type_info()->Compare(lower_, other.lower_) < 0)) {
+        lower_ = other.lower_;
+      }
+
+      // Set the upper bound to the smaller of the two.
+      if (other.upper_ != nullptr &&
+          (upper_ == nullptr || column_.type_info()->Compare(upper_, other.upper_) > 0)) {
+        upper_ = other.upper_;
+      }
+
+      Simplify();
+      return;
+    }
+    case PredicateType::Equality: {
+      // The equality value does not fall in this range.
+      if ((lower_ != nullptr && column_.type_info()->Compare(lower_, other.lower_) > 0) ||
+          (upper_ != nullptr && column_.type_info()->Compare(upper_, other.lower_) <= 0)) {
+        SetToNone();
+        return;
+      }
+
+      // The equality value does not fall in this bloom filter.
+      if (!CheckValueInBloomFilter(other.lower_)) {
+        SetToNone();
+      } else {
+        predicate_type_ = PredicateType::Equality;
+        lower_ = other.lower_;
+        upper_ = nullptr;
+        bf_ = nullptr;
+      }
+      return;
+    }
+    case PredicateType::IsNotNull: return;
+    case PredicateType::IsNull: {
+      SetToNone();
+      return;
+    }
+    case PredicateType::InList: {
+      values_ = other.values_;
+
+      // Only values within the range should be retained.
+      auto search_by = [&] (const void* lhs, const void* rhs) {
+        return this->column_.type_info()->Compare(lhs, rhs) < 0;
+      };
+
+      // Remove all values greater than the range.
+      if (upper_ != nullptr) {
+        auto upper = std::lower_bound(values_.begin(), values_.end(), upper_, search_by);
+        values_.erase(upper, values_.end());
+      }
+
+      // Remove all values less than the range.
+      if (lower_ != nullptr) {
+        auto lower = std::lower_bound(values_.begin(), values_.end(), lower_, search_by);
+        values_.erase(values_.begin(), lower);
+      }
+
+      // Remove all values not in BloomFilter
+      values_.erase(std::remove_if(values_.begin(), values_.end(),
+                                   [this] (const void* v) {
+                                     return !CheckValueInBloomFilter(v);
+                                   }), values_.end());
+      predicate_type_ = PredicateType::InList;
+      Simplify();
+      return;
+    };
+    case PredicateType::BloomFilter: {
+      impala::BloomFilter::Or(other.bf_, bf_);
+      return;
+    }
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -577,6 +730,22 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
       });
       return;
     };
+    case PredicateType::BloomFilter: {
+      if (lower_ != nullptr) {
+        ApplyPredicate(block, sel, [this] (const void* cell) {
+          return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
+        });
+      }
+      if (upper_ != nullptr) {
+        ApplyPredicate(block, sel, [this] (const void* cell) {
+          return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0;
+        });
+      }
+      ApplyPredicate(block, sel, [this] (const void* cell) {
+        return bf_->Find(impala::GetHashValue<PhysicalType>(cell, impala::DEFAULT_HASH_SEED));
+      });
+      return;
+    }
     case PredicateType::None: LOG(FATAL) << "NONE predicate evaluation";
   }
   LOG(FATAL) << "unknown predicate type";
@@ -659,6 +828,9 @@ string ColumnPredicate::ToString() const {
       ss.append(")");
       return ss;
     };
+    case PredicateType::BloomFilter: {
+      return strings::Substitute("`$0` BloomFilter", column_.name());
+    }
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -688,6 +860,19 @@ bool ColumnPredicate::operator==(const ColumnPredicate& other) const {
     case PredicateType::None:
     case PredicateType::IsNotNull:
     case PredicateType::IsNull: return true;
+    case PredicateType::BloomFilter: {
+      if (!((lower_ == other.lower_) || 
+            (lower_ != nullptr && other.lower_ != nullptr &&
+             column_.type_info()->Compare(lower_, other.lower_) == 0))) {
+        return false;
+      }
+      if (!((upper_ == other.upper_) ||
+            (upper_ != nullptr && other.upper_ != nullptr &&
+             column_.type_info()->Compare(upper_, other.upper_) == 0))){
+        return false;
+      }
+      return this->bf_ == other.bf_;
+    }
   }
   LOG(FATAL) << "unknown predicate type";
 }
@@ -705,6 +890,11 @@ bool ColumnPredicate::CheckValueInList(const void* value) const {
                             });
 }
 
+bool ColumnPredicate::CheckValueInBloomFilter(const void* value) const {
+  CHECK(predicate_type_ == PredicateType::BloomFilter);
+  return bf_->Find(impala::GetHashValue<column_.type_info().type()>(value, impala::DEFAULT_HASH_SEED))
+}
+
 namespace {
 int SelectivityRank(const ColumnPredicate& predicate) {
   int rank;
@@ -713,8 +903,9 @@ int SelectivityRank(const ColumnPredicate& predicate) {
     case PredicateType::IsNull: rank = 1; break;
     case PredicateType::Equality: rank = 2; break;
     case PredicateType::InList: rank = 3; break;
-    case PredicateType::Range: rank = 4; break;
-    case PredicateType::IsNotNull: rank = 5; break;
+    case PredicateType::BloomFilter: rank = 4; break;
+    case PredicateType::Range: rank = 5; break;
+    case PredicateType::IsNotNull: rank = 6; break;
     default: LOG(FATAL) << "unknown predicate type";
   }
   return rank * (kLargestTypeSize + 1) + predicate.column().type_info()->size();

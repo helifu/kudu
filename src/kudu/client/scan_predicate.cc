@@ -149,12 +149,13 @@ BloomFilterPredicateData::~BloomFilterPredicateData() {
 }
 
 Status BloomFilterPredicateData::AddToScanSpec(ScanSpec* spec, Arena* arena) {
-  /*void* val_void;
+  /* ToDo: maybe wrapper BloomFilter later.
+  void* val_void;
   RETURN_NOT_OK(val_->data_->CheckTypeAndGetPointer(col_.name(),
                                                     col_.type_info()->physical_type(),
                                                     &val_void));*/
-  spec->AddPredicate(ColumnPredicate::BloomFilter(col_, val_));
-
+  // Use 'release' to assign the BF to ColumnPredicate.
+  spec->AddPredicate(ColumnPredicate::BloomFilter(col_, nullptr, nullptr, val_.release()));
   return Status::OK();
 }
 

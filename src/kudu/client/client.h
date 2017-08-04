@@ -46,6 +46,7 @@
 #include "kudu/util/kudu_export.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/common/bloomfilter/bloom-filter.h"
 
 namespace kudu {
 
@@ -985,6 +986,7 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   ///   Name of the column to which the predicate applies
   /// @param [in] value
   ///   bloom filter which the column will be matched against.
+  ///   Todo: need wrapper on impala::BloomFilter later.
   /// @return Raw pointer to an BloomFilter predicate. The caller owns the
   ///   predicate until it is passed into KuduScanner::AddConjunctPredicate().
   ///   In the case of an error (e.g. an invalid column name), a non-NULL

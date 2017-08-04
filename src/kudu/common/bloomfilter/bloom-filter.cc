@@ -53,10 +53,10 @@ BloomFilter::BloomFilter(const int log_heap_space)
   memset(directory_, 0, alloc_size);
 }
 
-BloomFilter::BloomFilter(const TBloomFilter& thrift)
-    : BloomFilter(thrift.log_heap_space) {
-  DCHECK_EQ(thrift.directory.size(), directory_size());
-  memcpy(directory_, &thrift.directory[0], thrift.directory.size());
+BloomFilter::BloomFilter(const BloomFilterPB& pb)
+  : BloomFilter(pb.log_heap_space()) {
+  DCHECK_EQ(pb.directory.size(), directory_size());
+  memcpy(directory_, &pb.directory[0], pb.directory.size());
 }
 
 BloomFilter::~BloomFilter() {
@@ -66,20 +66,9 @@ BloomFilter::~BloomFilter() {
   }
 }
 
-void BloomFilter::ToThrift(TBloomFilter* thrift) const {
-  thrift->log_heap_space = log_num_buckets_ + LOG_BUCKET_BYTE_SIZE;
-  string tmp(reinterpret_cast<const char*>(directory_), directory_size());
-  thrift->directory.swap(tmp);
-  thrift->always_true = false;
-}
-
-void BloomFilter::ToThrift(const BloomFilter* filter, TBloomFilter* thrift) {
-  DCHECK(thrift != NULL);
-  if (filter == NULL) {
-    thrift->always_true = true;
-    return;
-  }
-  filter->ToThrift(thrift);
+void BloomFilter::ToPB(const BloomFilter* filter, BloomFilterPB* pb) {
+  pb->set_log_heap_space(filter->log_num_buckets_ + LOG_BUCKET_BYTE_SIZE);
+  pb->set_directory(reinterpret_cast<const char*>(filter->directory_), directory_size());
 }
 
 // The SIMD reinterpret_casts technically violate C++'s strict aliasing rules. However, we
@@ -170,19 +159,14 @@ OrEqualArrayAvx(size_t n, const char* __restrict__ in, char* __restrict__ out) {
 }
 } //namespace
 
-void BloomFilter::Or(const TBloomFilter& in, TBloomFilter* out) {
+void BloomFilter::Or(const BloomFilter* in, BloomFilter* out) {
   DCHECK(out != NULL);
-  DCHECK_EQ(in.log_heap_space, out->log_heap_space);
-  if (&in == out) return;
-  out->always_true |= in.always_true;
-  if (out->always_true) {
-    out->directory.resize(0);
-    return;
-  }
-  DCHECK_EQ(in.directory.size(), out->directory.size())
-      << "Equal log heap space " << in.log_heap_space
-      << ", but different directory sizes: " << in.directory.size() << ", "
-      << out->directory.size();
+  DCHECK_EQ(in->log_num_buckets_, out->log_num_buckets_);
+  if (*in == *out) return;
+  DCHECK_EQ(in->directory_size(), out->directory_size())
+            << "Equal log heap space " << (in->log_num_buckets_ + LOG_BUCKET_BYTE_SIZE)
+            << ", but different directory sizes: " << in->directory_size()
+            << ", " << out->directory_size();
   // The trivial loop out[i] |= in[i] should auto-vectorize with gcc at -O3, but it is not
   // written in a way that is very friendly to auto-vectorization. Instead, we manually
   // vectorize, increasing the speed by up to 56x.
@@ -190,12 +174,14 @@ void BloomFilter::Or(const TBloomFilter& in, TBloomFilter* out) {
   // TODO: Tune gcc flags to auto-vectorize the trivial loop instead of hand-vectorizing
   // it. This might not be possible.
   if (CpuInfo::IsSupported(CpuInfo::AVX)) {
-    OrEqualArrayAvx(in.directory.size(), &in.directory[0], &out->directory[0]);
+    OrEqualArrayAvx(in->directory_size(), 
+                    reinterpret_cast<const char*>in->directory_,
+                    reinterpret_cast<const char*>out->directory_);
   } else {
-    const __m128i* simd_in = reinterpret_cast<const __m128i*>(&in.directory[0]);
+    const __m128i* simd_in = reinterpret_cast<const __m128i*>(in->directory_);
     const __m128i* const simd_in_end =
-        reinterpret_cast<const __m128i*>(&in.directory[0] + in.directory.size());
-    __m128i* simd_out = reinterpret_cast<__m128i*>(&out->directory[0]);
+        reinterpret_cast<const __m128i*>(in->directory_ + in->directory_size());
+    __m128i* simd_out = reinterpret_cast<__m128i*>(out->directory_);
     // in.directory has a size (in bytes) that is a multiple of 32. Since sizeof(__m128i)
     // == 16, we can do two _mm_or_si128's in each iteration without checking array
     // bounds.
@@ -235,6 +221,19 @@ double BloomFilter::FalsePositiveProb(const size_t ndv, const int log_heap_space
   return pow(1 - exp((-1.0 * static_cast<double>(BUCKET_WORDS) * static_cast<double>(ndv))
                      / static_cast<double>(1ull << (log_heap_space + 3))),
       BUCKET_WORDS);
+}
+
+BloomFilter* BloomFilter::Clone() const {
+  BloomFilter* bf = new BloomFilter(log_num_buckets_ + LOG_BUCKET_BYTE_SIZE);
+  memcpy(bf->directory_, this->directory_, directory_size());
+  return bf;
+}
+
+bool BloomFilter::operator==(const BloomFilter& rhs) const {
+  if (this->log_num_buckets_ != rhs.log_num_buckets_) {
+    return false;
+  }
+  return memcmp(this->directory_, other.directory_, directory_size());
 }
 
 } // namespace impala

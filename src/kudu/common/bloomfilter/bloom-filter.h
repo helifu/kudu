@@ -26,10 +26,9 @@
 #include <immintrin.h>
 
 #include "kudu/common/bloomfilter/compiler-util.h"
-//#include "gen-cpp/ImpalaInternalService_types.h"
-#include "kudu/gutil/macros.h"
-//#include "runtime/buffered-block-mgr.h"
 #include "kudu/common/bloomfilter/hash-util.h"
+#include "kudu/common/common.pb.h"
+#include "kudu/gutil/macros.h"
 
 namespace impala {
 
@@ -59,15 +58,14 @@ class BloomFilter {
  public:
   /// Consumes at most (1 << log_heap_space) bytes on the heap.
   explicit BloomFilter(const int log_heap_space);
-  explicit BloomFilter(const TBloomFilter& thrift);
+  explicit BloomFilter(const BloomFilterPB& pb);
   ~BloomFilter();
 
   /// Representation of a filter which allows all elements to pass.
   static constexpr BloomFilter* const ALWAYS_TRUE_FILTER = NULL;
 
-  /// Converts 'filter' to its corresponding Thrift representation. If the first argument
-  /// is NULL, it is interpreted as a complete filter which contains all elements.
-  static void ToThrift(const BloomFilter* filter, TBloomFilter* thrift);
+  /// Converts 'filter' to its corresponding PB representation.
+  static void ToPB(const BloomFilter* filter, BloomFilterPB* pb);
 
   /// Adds an element to the BloomFilter. The function used to generate 'hash' need not
   /// have good uniformity, but it should have low collision probability. For instance, if
@@ -81,7 +79,8 @@ class BloomFilter {
   bool Find(const uint32_t hash) const noexcept;
 
   /// Computes the logical OR of 'in' with 'out' and stores the result in 'out'.
-  static void Or(const TBloomFilter& in, TBloomFilter* out);
+  /*static void Or(const TBloomFilter& in, TBloomFilter* out);*/
+  static void Or(const BloomFilter* in, BloomFilter* out);
 
   /// As more distinct items are inserted into a BloomFilter, the false positive rate
   /// rises. MaxNdv() returns the NDV (number of distinct values) at which a BloomFilter
@@ -104,6 +103,12 @@ class BloomFilter {
     DCHECK_GE(log_heap_size, LOG_BUCKET_WORD_BITS);
     return sizeof(Bucket) * (1LL << (log_heap_size - LOG_BUCKET_WORD_BITS));
   }
+
+  // return A new identical BloomFilter object.
+  BloomFilter* Clone() const;
+
+  // operator== 
+  bool operator==(const BloomFilter& rhs) const;
 
  private:
   /// The BloomFilter is divided up into Buckets
@@ -152,9 +157,6 @@ class BloomFilter {
   int64_t directory_size() const {
     return 1uLL << (log_num_buckets_ + LOG_BUCKET_BYTE_SIZE);
   }
-
-  /// Serializes this filter as Thrift.
-  void ToThrift(TBloomFilter* thrift) const;
 
   /// Some constants used in hashing. #defined for efficiency reasons.
 #define IMPALA_BLOOM_HASH_CONSTANTS                                             \

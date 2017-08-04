@@ -28,7 +28,6 @@ package kudu;
 
 option java_package = "org.apache.kudu";
 
-import "kudu/common/bloomfilter/bloom-filter.proto"
 import "kudu/util/compression/compression.proto";
 import "kudu/util/pb_util.proto";
 
@@ -288,6 +287,12 @@ message PartitionPB {
   optional bytes partition_key_start = 2;
   // The encoded end partition key (exclusive).
   optional bytes partition_key_end = 3;
+}
+
+// The serialized format of bloom filter which comes from Impala.
+message BloomFilterPB {
+  required uint32 log_heap_space = 1;
+  required string directory = 2;
 }
 
 // A predicate that can be applied on a Kudu column.

@@ -137,7 +137,10 @@ class ColumnPredicate {
   // Creates a new BloomFilter predicate for the column.
   //
   // 
-  static ColumnPredicate BloomFilter(ColumnSchema column, const impala::BloomFilter* bloomfilter);
+  static ColumnPredicate BloomFilter(ColumnSchema column,
+                                     const void* lower,
+                                     const void* upper,
+                                     impala::BloomFilter* value);
 
   // Returns the type of this predicate.
   PredicateType predicate_type() const {
@@ -202,6 +205,17 @@ class ColumnPredicate {
                                     return DataTypeTraits<PhysicalType>::Compare(lhs, rhs) < 0;
                                   });
       };
+      case PredicateType::BloomFilter: {
+        if ((this->lower_ != nullptr) && 
+            (DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) < 0)) {
+          return false;
+        }
+        if ((this->upper_ != nullptr) &&
+            (DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) >= 0)) {
+          return false;
+        }
+        return bf_->Find(impala::GetHashValue<PhysicalType>(cell, impala::DEFAULT_HASH_SEED));
+      }
     }
     LOG(FATAL) << "unknown predicate type";
   }
@@ -240,6 +254,11 @@ class ColumnPredicate {
     return values_;
   }
 
+  // Returns the bloom filter if this is a bloom filter predicate.
+  const impala::BloomFilter* bloom_filter() const {
+    return bf_.get();
+  }
+
  private:
 
   friend class TestColumnPredicate;
@@ -254,6 +273,13 @@ class ColumnPredicate {
   ColumnPredicate(PredicateType predicate_type,
                   ColumnSchema column,
                   std::vector<const void*>* values);
+
+  // Creates a bloom filter column predicate.
+  ColumnPredicate(PredicateType predicate_type,
+                  ColumnSchema column,
+                  const void* lower,
+                  const void* upper,
+                  impala::BloomFilter* value);
 
   // Transition to a None predicate type.
   void SetToNone();
@@ -282,6 +308,9 @@ class ColumnPredicate {
   // Merge another predicate into this InList predicate.
   void MergeIntoInList(const ColumnPredicate& other);
 
+  // Merge another predicate into this BloomFilter predicate.
+  void MergeIntoBloomFilter(const ColumnPredicate& other);
+
   // For a Range type predicate, this helper function checks
   // whether a given value is in the range.
   bool CheckValueInRange(const void* value) const;
@@ -289,6 +318,10 @@ class ColumnPredicate {
   // For an InList type predicate, this helper function checks
   // whether a given value is in the list.
   bool CheckValueInList(const void* value) const;
+
+  // For an BloomFilter type predicate, this helper function checks
+  // whether a given value is in the bloomfilter.
+  bool CheckValueInBloomFilter(const void* value) const;
 
   // The type of this predicate.
   PredicateType predicate_type_;
@@ -307,7 +340,9 @@ class ColumnPredicate {
   std::vector<const void*> values_;
 
   // The bloom filter to check if the column value is in it.
-  impala::BloomFilter* bf_;
+  // Attention: the arena can't hold a bloomfilter object (big memory) on the 
+  //            server side, so we have to use smart pointer in this class.
+  gscoped_ptr<impala::BloomFilter*> bf_;
 };
 
 // Compares predicates according to selectivity. Predicates that match fewer

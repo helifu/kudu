@@ -40,6 +40,8 @@ using boost::algorithm::contains;
 using boost::algorithm::trim;
 namespace fs = boost::filesystem;
 using std::max;
+using namespace std;
+using namespace strings;
 
 DECLARE_bool(abort_on_config_error);
 DEFINE_int32(num_cores, 0, "(Advanced) If > 0, it sets the number of cores available to"

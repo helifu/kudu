@@ -444,6 +444,22 @@ void ColumnPredicateToPB(const ColumnPredicate& predicate,
       }
       return;
     };
+    case PredicateType::BloomFilter: {
+      auto* pred = pb->mutable_bloom_filter();
+      if (predicate.raw_lower() != nullptr) {
+        CopyPredicateBoundToPB(predicate.column(),
+                               predicate.raw_lower(),
+                               pred->mutable_lower());
+      }
+      if (predicate.raw_upper() != nullptr) {
+        CopyPredicateBoundToPB(predicate.column(),
+                               predicate.raw_upper(),
+                               pred->mutable_upper());
+      }
+      impala::BloomFilter::ToPB(predicate.bloom_filter(), 
+                                pred->mutable_bloomfilter());
+      return;
+    }
     case PredicateType::None: LOG(FATAL) << "None predicate may not be converted to protobuf";
   }
   LOG(FATAL) << "unknown predicate type";
@@ -510,9 +526,25 @@ Status ColumnPredicateFromPB(const Schema& schema,
       break;
     };
     case ColumnPredicatePB::kIsNull: {
-        *predicate = ColumnPredicate::IsNull(col);
-        break;
+      *predicate = ColumnPredicate::IsNull(col);
+      break;
+    }
+    case ColumnPredicatePB::kBloomFilter: {
+      const auto& pb_bf = pb.bloom_filter();
+      const void* lower = nullptr;
+      const void* upper = nullptr;
+      if (pb_bf.has_lower()) {
+        RETURN_NOT_OK(CopyPredicateBoundFromPB(col, pb_bf.lower(), arena, &lower));
       }
+      if (pb_bf.has_upper()) {
+        RETURN_NOT_OK(CopyPredicateBoundFromPB(col, pb_bf.upper(), arena, &upper));
+      }
+
+      DCHECK(pb_bf.has_bloomfilter());
+      impala::BloomFilter* bf = new impala::BloomFilter(pb_bf);
+      *predicate = ColumnPredicate::BloomFilter(col, lower, upper, bf);
+      break;
+    }
     default: return Status::InvalidArgument("Unknown predicate type for column", col.name());
   }
   return Status::OK();

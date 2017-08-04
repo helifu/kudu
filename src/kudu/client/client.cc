@@ -843,6 +843,9 @@ KuduPredicate* KuduTable::NewIsNullPredicate(const Slice& col_name) {
 
 KuduPredicate* KuduTable::NewBloomFilterPredicate(const Slice& col_name, 
                                                   impala::BloomFilter* value) {
+  // check whether value pointer is nullptr
+  if (value == nullptr) return nullptr;
+
   // We always take ownership of value; this ensures cleanup if the predicate is invalid.
   auto cleanup = MakeScopedCleanup([&]() {
     delete value;
