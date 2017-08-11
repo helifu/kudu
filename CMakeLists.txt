@@ -992,7 +992,12 @@ include_directories(SYSTEM ${BOOST_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(boost_date_time
     STATIC_LIB "${BOOST_DATE_TIME_STATIC_LIB}"
     SHARED_LIB "${BOOST_DATE_TIME_SHARED_LIB}")
-
+ADD_THIRDPARTY_LIB(boost_filesystem
+  STATIC_LIB "${BOOST_FILESYSTEM_STATIC_LIB}"
+  SHARED_LIB "${BOOST_FILESYSTEM_SHARED_LIB}")
+ADD_THIRDPARTY_LIB(boost_system
+  STATIC_LIB "${BOOST_SYSTEM_STATIC_LIB}"
+  SHARED_LIB "${BOOST_SYSTEM_SHARED_LIB}")
 ############################################################
 # Linker setup
 ############################################################

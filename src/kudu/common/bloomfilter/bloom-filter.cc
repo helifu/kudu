@@ -23,8 +23,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/common/bloomfilter/hash-util.h"
-
 using namespace std;
 
 namespace impala {
@@ -53,10 +51,11 @@ BloomFilter::BloomFilter(const int log_heap_space)
   memset(directory_, 0, alloc_size);
 }
 
-BloomFilter::BloomFilter(const BloomFilterPB& pb)
-  : BloomFilter(pb.log_heap_space()) {
-  DCHECK_EQ(pb.directory.size(), directory_size());
-  memcpy(directory_, &pb.directory[0], pb.directory.size());
+BloomFilter::BloomFilter(const int log_heap_space, uint8_t* directory) 
+  : log_num_buckets_(std::max(1, log_heap_space - LOG_BUCKET_BYTE_SIZE)),
+  directory_mask_((1ull << std::min(63, log_num_buckets_)) - 1),
+  directory_(reinterpret_cast<Bucket*>(directory)) {
+  // the 'directory_' is 16 bytes alignment because of the Arena.
 }
 
 BloomFilter::~BloomFilter() {
@@ -68,7 +67,8 @@ BloomFilter::~BloomFilter() {
 
 void BloomFilter::ToPB(const BloomFilter* filter, BloomFilterPB* pb) {
   pb->set_log_heap_space(filter->log_num_buckets_ + LOG_BUCKET_BYTE_SIZE);
-  pb->set_directory(reinterpret_cast<const char*>(filter->directory_), directory_size());
+  pb->set_directory(reinterpret_cast<const char*>(filter->directory_),
+                    filter->directory_size());
 }
 
 // The SIMD reinterpret_casts technically violate C++'s strict aliasing rules. However, we
@@ -175,8 +175,8 @@ void BloomFilter::Or(const BloomFilter* in, BloomFilter* out) {
   // it. This might not be possible.
   if (CpuInfo::IsSupported(CpuInfo::AVX)) {
     OrEqualArrayAvx(in->directory_size(), 
-                    reinterpret_cast<const char*>in->directory_,
-                    reinterpret_cast<const char*>out->directory_);
+                    reinterpret_cast<const char*>(in->directory_),
+                    reinterpret_cast<char*>(out->directory_));
   } else {
     const __m128i* simd_in = reinterpret_cast<const __m128i*>(in->directory_);
     const __m128i* const simd_in_end =
@@ -233,7 +233,16 @@ bool BloomFilter::operator==(const BloomFilter& rhs) const {
   if (this->log_num_buckets_ != rhs.log_num_buckets_) {
     return false;
   }
-  return memcmp(this->directory_, other.directory_, directory_size());
+  /*printf("\n ==this: \n");
+  for (int i = 0; i < directory_size(); ++i) {
+    printf("%d ", *((char*)(this->directory_)+i));
+  }
+  printf("\n ==rhs: \n");
+  for (int i = 0; i < directory_size(); ++i) {
+    printf("%d ", *((char*)(  rhs.directory_)+i));
+  }
+  printf("\n");*/
+  return (0 == memcmp(this->directory_, rhs.directory_, directory_size())) ? true : false;
 }
 
 } // namespace impala

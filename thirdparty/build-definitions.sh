@@ -666,7 +666,7 @@ build_boost() {
   fi
 
   # Build the date_time boost lib.
-  ./bootstrap.sh --prefix=$PREFIX threading=multi --with-libraries=date_time
+  ./bootstrap.sh --prefix=$PREFIX threading=multi --with-libraries=date_time,filesystem
   ./b2 clean $TOOLSET --build-dir="$BOOST_BDIR"
   ./b2 install variant=release link=static,shared --build-dir="$BOOST_BDIR" $TOOLSET -q -d0 \
     --debug-configuration \

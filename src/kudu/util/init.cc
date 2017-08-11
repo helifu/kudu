@@ -25,6 +25,7 @@
 #include "kudu/gutil/cpu.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
+#include "kudu/common/bloomfilter/cpu-info.h"
 
 using std::string;
 
@@ -73,6 +74,7 @@ Status CheckCPUFlags() {
     return BadCPUStatus(cpu, "SSSE3");
   }
 
+  impala::CpuInfo::Init();
   return Status::OK();
 }
 

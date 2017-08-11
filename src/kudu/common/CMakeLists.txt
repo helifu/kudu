@@ -40,6 +40,7 @@ ADD_EXPORTABLE_LIBRARY(wire_protocol_proto
   NONLINK_DEPS ${WIRE_PROTOCOL_PROTO_TGTS})
 
 set(COMMON_SRCS
+  bloomfilter/bloom-filter-test.cc
   bloomfilter/bloom-filter.cc
   bloomfilter/cpu-info.cc
   bloomfilter/hash-util-ir.cc
@@ -73,13 +74,16 @@ set(COMMON_LIBS
   consensus_metadata_proto
   wire_protocol_proto
   kudu_util
-  gutil)
+  gutil
+  boost_system
+  boost_filesystem)
 
 ADD_EXPORTABLE_LIBRARY(kudu_common
   SRCS ${COMMON_SRCS}
   DEPS ${COMMON_LIBS})
 
 set(KUDU_TEST_LINK_LIBS kudu_common ${KUDU_MIN_TEST_LIBS})
+ADD_KUDU_TEST(bloomfilter/bloom-filter-test)
 ADD_KUDU_TEST(column_predicate-test)
 ADD_KUDU_TEST(encoded_key-test)
 ADD_KUDU_TEST(generic_iterators-test)

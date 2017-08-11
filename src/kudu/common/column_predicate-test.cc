@@ -26,6 +26,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/util/test_util.h"
+#include "kudu/gutil/bits.h"
 
 namespace kudu {
 
@@ -508,12 +509,12 @@ class TestColumnPredicate : public KuduTest {
     //   [------) AND
     //        | |
     // =
-    // None
-    bot_list = { &values[0], &values[1] };
+    //        |
+    bot_list = { &values[5], &values[6] };
     TestMerge(ColumnPredicate::Range(column, &values[3], &values[6]),
               ColumnPredicate::InList(column, &bot_list),
-              ColumnPredicate::None(column),
-              PredicateType::None);
+              ColumnPredicate::Equality(column, &values[5]),
+              PredicateType::Equality);
 
     //      [-----------> AND
     //    | |  |
@@ -534,6 +535,324 @@ class TestColumnPredicate : public KuduTest {
               ColumnPredicate::InList(column, &bot_list),
               ColumnPredicate::Equality(column, &values[2]),
               PredicateType::Equality);
+
+    // BloomFilter + Range
+
+    // init bloom filter
+    uint64_t ndv = 16 * 1024 * 1024;
+    int log_heap_space = Bits::Log2Floor64(ndv);
+    Arena arena(1024, 1024 * 1024);
+
+    void* directory = arena.AllocateBytesAligned(1uLL<<log_heap_space, 16);
+    ASSERT_NE(nullptr, directory);
+    impala::BloomFilter* bf = arena.NewObject<impala::BloomFilter>(log_heap_space, (uint8_t*)directory);
+    ASSERT_NE(nullptr, bf);
+    top_list = { &values[2], &values[3], &values[4] };
+    for (int i = 0; i < top_list.size(); ++i) {
+      switch (column.type_info()->type()) {
+        case INT8:
+          bf->Insert(impala::GetHashValue<INT8>(top_list[i]));
+          break;
+        case INT32:
+          bf->Insert(impala::GetHashValue<INT32>(top_list[i]));
+          break;
+        case STRING:
+        case BINARY:
+          bf->Insert(impala::GetHashValue<STRING>(top_list[i]));
+          break;
+        default:
+          ASSERT_TRUE(false);
+        }
+    }
+
+    // [--------) AND
+    // [--------)
+    // =
+    // [--------)
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              ColumnPredicate::Range(column, &values[2], &values[5]),
+              ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              PredicateType::BloomFilter);
+
+    // [--------) AND
+    // [----)
+    // =
+    // [----)
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              ColumnPredicate::Range(column, &values[2], &values[4]),
+              ColumnPredicate::BloomFilter(column, &values[2], &values[4], bf),
+              PredicateType::BloomFilter);
+
+    // [--------) AND
+    //   [----)
+    // =
+    //   [----)
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[6], bf),
+              ColumnPredicate::Range(column, &values[3], &values[5]),
+              ColumnPredicate::BloomFilter(column, &values[3], &values[5], bf),
+              PredicateType::BloomFilter);
+
+    // [-----) AND
+    //   [------)
+    // =
+    //   [---)
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              ColumnPredicate::Range(column, &values[3], &values[6]),
+              ColumnPredicate::BloomFilter(column, &values[3], &values[5], bf),
+              PredicateType::BloomFilter);
+
+    // [--) AND
+    //    [---)
+    // =
+    // None
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[4], bf),
+              ColumnPredicate::Range(column, &values[4], &values[6]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // [--) AND
+    //       [---)
+    // =
+    // None
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[1], &values[3], bf),
+              ColumnPredicate::Range(column, &values[4], &values[6]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // [---> AND
+    // [--->
+    // =
+    // [--->
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], nullptr, bf),
+              ColumnPredicate::Range(column, &values[2], nullptr),
+              ColumnPredicate::BloomFilter(column, &values[2], nullptr, bf),
+              PredicateType::BloomFilter);
+
+    // [-----> AND
+    //   [--->
+    // =
+    //   [--->
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], nullptr, bf),
+              ColumnPredicate::Range(column, &values[3], nullptr),
+              ColumnPredicate::BloomFilter(column, &values[3], nullptr, bf),
+              PredicateType::BloomFilter);
+
+    // <---) AND
+    // <---)
+    // =
+    // <---)
+    TestMerge(ColumnPredicate::BloomFilter(column, nullptr, &values[5], bf),
+              ColumnPredicate::Range(column, nullptr, &values[5]),
+              ColumnPredicate::BloomFilter(column, nullptr, &values[5], bf),
+              PredicateType::BloomFilter);
+
+    //   <---) AND
+    // <---)
+    // =
+    // <---)
+    TestMerge(ColumnPredicate::BloomFilter(column, nullptr, &values[5], bf),
+              ColumnPredicate::Range(column, nullptr, &values[3]),
+              ColumnPredicate::BloomFilter(column, nullptr, &values[3], bf),
+              PredicateType::BloomFilter);
+
+    // <---) AND
+    // [--->
+    // =
+    // [---)
+    TestMerge(ColumnPredicate::BloomFilter(column, nullptr, &values[5], bf),
+              ColumnPredicate::Range(column, &values[2], nullptr),
+              ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              PredicateType::BloomFilter);
+
+    // <---)     AND
+    //     [--->
+    // =
+    // None
+    TestMerge(ColumnPredicate::BloomFilter(column, nullptr, &values[5], bf),
+              ColumnPredicate::Range(column, &values[5], nullptr),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // <---)       AND
+    //       [--->
+    // =
+    // None
+    TestMerge(ColumnPredicate::BloomFilter(column, nullptr, &values[4], bf),
+              ColumnPredicate::Range(column, &values[5], nullptr),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // BloomFilter + InList
+
+    //     [---) AND
+    //   | | | | |
+    // =   | |
+    bot_list = { &values[1], &values[2], &values[3], &values[4], &values[5] };
+    res_list = { &values[2], &values[3], &values[4] };
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::InList(column, &res_list),
+              PredicateType::InList);
+
+    //    [------) AND
+    //  |        | |
+    // = None
+    bot_list = { &values[1], &values[5], &values[6] };
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //  [------) AND
+    //            | |
+    // =
+    // None
+    bot_list = { &values[5], &values[6] };
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[4], bf),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //       [------) AND
+    //   | |
+    // =
+    // None
+    bot_list = { &values[0], &values[1] };
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //   [------) AND
+    //        | |
+    // =
+    //        |
+    bot_list = { &values[4], &values[5] };
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::Equality(column, &values[4]),
+              PredicateType::Equality);
+
+    //      [-----------> AND
+    //    | |  |
+    // =    |  |
+    bot_list = { &values[1], &values[2], &values[3] };
+    res_list = { &values[2], &values[3] };
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], nullptr, bf),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::InList(column, &res_list),
+              PredicateType::InList);
+
+    // <----) AND
+    //   |  |  |
+    // = |
+    bot_list = { &values[4], &values[5], &values[6] };
+    TestMerge(ColumnPredicate::BloomFilter(column, nullptr, &values[5], bf),
+              ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::Equality(column, &values[4]),
+              PredicateType::Equality);
+
+    // BloomFilter + Equality
+
+    //   [---) AND
+    // |
+    // =
+    // None
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              ColumnPredicate::Equality(column, &values[1]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // [---) AND
+    // |
+    // =
+    // |
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              ColumnPredicate::Equality(column, &values[2]),
+              ColumnPredicate::Equality(column, &values[2]),
+              PredicateType::Equality);
+
+    // [---) AND
+    //   |
+    // =
+    //   |
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              ColumnPredicate::Equality(column, &values[3]),
+              ColumnPredicate::Equality(column, &values[3]),
+              PredicateType::Equality);
+
+    // [---) AND
+    //     |
+    // =
+    // None
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[1], &values[5], bf),
+              ColumnPredicate::Equality(column, &values[5]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+
+    // [---) AND
+    //       |
+    // =
+    // None
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              ColumnPredicate::Equality(column, &values[6]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    //   [---> AND
+    // |
+    // =
+    // None
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], nullptr, bf),
+              ColumnPredicate::Equality(column, &values[1]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // [---> AND
+    // |
+    // =
+    // |
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], nullptr, bf),
+              ColumnPredicate::Equality(column, &values[2]),
+              ColumnPredicate::Equality(column, &values[2]),
+              PredicateType::Equality);
+
+    // [-----> AND
+    //   |
+    // =
+    //   |
+    TestMerge(ColumnPredicate::BloomFilter(column, &values[2], nullptr, bf),
+              ColumnPredicate::Equality(column, &values[3]),
+              ColumnPredicate::Equality(column, &values[3]),
+              PredicateType::Equality);
+
+    // <---) AND
+    //   |
+    // =
+    //   |
+    TestMerge(ColumnPredicate::BloomFilter(column, nullptr, &values[5], bf),
+              ColumnPredicate::Equality(column, &values[2]),
+              ColumnPredicate::Equality(column, &values[2]),
+              PredicateType::Equality);
+
+    // <---) AND
+    //     |
+    // =
+    // None
+    TestMerge(ColumnPredicate::BloomFilter(column, nullptr, &values[5], bf),
+              ColumnPredicate::Equality(column, &values[5]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // <---)    AND
+    //       |
+    // =
+    // None
+    TestMerge(ColumnPredicate::BloomFilter(column, nullptr, &values[5], bf),
+              ColumnPredicate::Equality(column, &values[6]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
 
     // None
 
@@ -589,6 +908,15 @@ class TestColumnPredicate : public KuduTest {
     bot_list = { &values[2], &values[3], &values[4] };
     TestMerge(ColumnPredicate::None(column),
               ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // None AND
+    // | | |
+    // =
+    // None
+    TestMerge(ColumnPredicate::None(column),
+              ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
               ColumnPredicate::None(column),
               PredicateType::None);
 
@@ -659,6 +987,15 @@ class TestColumnPredicate : public KuduTest {
               ColumnPredicate::InList(column, &res_list),
               PredicateType::InList);
 
+    // IS NOT NULL AND
+    // | | |
+    // =
+    // | | |
+    TestMerge(ColumnPredicate::IsNotNull(column),
+              ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
+              PredicateType::BloomFilter);
+
     // IS NULL
 
     // IS NULL AND
@@ -713,6 +1050,15 @@ class TestColumnPredicate : public KuduTest {
     bot_list = { &values[1], &values[3], &values[6] };
     TestMerge(ColumnPredicate::IsNull(column),
               ColumnPredicate::InList(column, &bot_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // IS NULL AND
+    // | | |
+    // =
+    // None
+    TestMerge(ColumnPredicate::IsNull(column),
+              ColumnPredicate::BloomFilter(column, &values[2], &values[5], bf),
               ColumnPredicate::None(column),
               PredicateType::None);
 
@@ -1088,6 +1434,40 @@ TEST_F(TestColumnPredicate, TestRedaction) {
   ColumnSchema column_i32("a", INT32, true);
   int32_t one_32 = 1;
   ASSERT_EQ("`a` = <redacted>", ColumnPredicate::Equality(column_i32, &one_32).ToString());
+}
+
+TEST_F(TestColumnPredicate, TestBloomFilterConstructor) {
+  impala::BloomFilter bf(1024);
+  {
+    ColumnSchema column("c", INT32);
+    int32_t zero = 0;
+    int32_t one = 1;
+    int32_t two = 2;
+
+    ASSERT_EQ(PredicateType::BloomFilter,
+              ColumnPredicate::BloomFilter(column, &zero, &two, &bf).predicate_type());
+    ASSERT_EQ(PredicateType::Equality,
+              ColumnPredicate::BloomFilter(column, &zero, &one, &bf).predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::BloomFilter(column, &zero, &zero, &bf).predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::BloomFilter(column, &one, &zero, &bf).predicate_type());
+  }
+  {
+    ColumnSchema column("c", STRING);
+    Slice zero("", 0);
+    Slice one("\0", 1);
+    Slice two("\0\0", 2);
+
+    ASSERT_EQ(PredicateType::BloomFilter,
+              ColumnPredicate::BloomFilter(column, &zero, &two, &bf).predicate_type());
+    ASSERT_EQ(PredicateType::Equality,
+              ColumnPredicate::BloomFilter(column, &zero, &one, &bf).predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::BloomFilter(column, &zero, &zero, &bf).predicate_type());
+    ASSERT_EQ(PredicateType::None,
+              ColumnPredicate::BloomFilter(column, &one, &zero, &bf).predicate_type());
+  }
 }
 
 } // namespace kudu

@@ -26,11 +26,18 @@
 #include <boost/date_time/compiler_config.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/date_time/local_time/local_time.hpp>
+#include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/functional/hash.hpp>
 
 #include "glog/logging.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/bloomfilter/hash-util.h"
+
+using boost::posix_time::nanoseconds;
+using boost::posix_time::ptime;
+using boost::posix_time::ptime_from_tm;
+using boost::posix_time::time_duration;
+using boost::posix_time::to_tm;
 
 namespace impala {
 
@@ -47,10 +54,12 @@ static const uint32_t DEFAULT_HASH_SEED = 1234;
 static const int64_t MICROS_PER_SEC = 1000000ll;
 
 template<DataType T>
-inline uint32_t GetHashValueNonNull(const void* v, uint32_t seed = 0);
+inline uint32_t GetHashValueNonNull(const void* v, uint32_t seed = 0) {
+  return 0;
+}
 
 template<>
-inline uint32_t GetHashValueNonNull<INT8>(const void* v, uint32_t seed) 
+inline uint32_t GetHashValueNonNull<INT8>(const void* v, uint32_t seed) {
   DCHECK(v != NULL);
   return HashUtil::MurmurHash2_64(v, 1, seed);
 }
@@ -123,11 +132,11 @@ inline uint32_t GetHashValueNonNull<UNIXTIME_MICROS>(const void* v, uint32_t see
   return HashUtil::MurmurHash2_64(b, 12, seed);
 }
 
-template<typename T>
-inline uint32_t GetHashValue(const void* v, uint32_t seed) noexcept {
+template<DataType T>
+inline uint32_t GetHashValue(const void* v) noexcept {
   // Use HashCombine with arbitrary constant to ensure we don't return seed.
-  if (UNLIKELY(v == NULL)) return HashUtil::HashCombine32(HASH_VAL_NULL, seed);
-  return GetHashValueNonNull<T>(v, seed);
+  if (UNLIKELY(v == NULL)) return HashUtil::HashCombine32(HASH_VAL_NULL, DEFAULT_HASH_SEED);
+  return GetHashValueNonNull<T>(v, DEFAULT_HASH_SEED);
 }
 
 }

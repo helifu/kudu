@@ -30,6 +30,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/macros.h"
 
+using namespace kudu;
 namespace impala {
 
 /// A BloomFilter stores sets of items and offers a query operation indicating whether or
@@ -58,7 +59,7 @@ class BloomFilter {
  public:
   /// Consumes at most (1 << log_heap_space) bytes on the heap.
   explicit BloomFilter(const int log_heap_space);
-  explicit BloomFilter(const BloomFilterPB& pb);
+  explicit BloomFilter(const int log_heap_space, uint8_t* directory);
   ~BloomFilter();
 
   /// Representation of a filter which allows all elements to pass.
@@ -79,7 +80,6 @@ class BloomFilter {
   bool Find(const uint32_t hash) const noexcept;
 
   /// Computes the logical OR of 'in' with 'out' and stores the result in 'out'.
-  /*static void Or(const TBloomFilter& in, TBloomFilter* out);*/
   static void Or(const BloomFilter* in, BloomFilter* out);
 
   /// As more distinct items are inserted into a BloomFilter, the false positive rate

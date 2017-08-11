@@ -243,6 +243,18 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
         memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_values().back(), size);
         pushed_predicates++;
         break;
+      case PredicateType::BloomFilter:
+        if (predicate->raw_upper() != nullptr) {
+          memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_upper(), size);
+          pushed_predicates++;
+          // Try to decrease because upper bound is exclusive.
+          if (!TryDecrementCell(row->schema()->column(*col_idx_it),
+                                row->mutable_cell_ptr(*col_idx_it))) {
+              is_inclusive_bound = false;
+              break_loop = true;
+            }
+          }
+          break;
       case PredicateType::None:
         LOG(FATAL) << "NONE predicate can not be pushed into key";
     }
@@ -304,6 +316,12 @@ int PushLowerBoundKeyPredicates(ColIdxIter first,
         DCHECK(!predicate->raw_values().empty());
         memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_values().front(), size);
         pushed_predicates++;
+        break;
+      case PredicateType::BloomFilter:
+        if (predicate->raw_lower() != nullptr) {
+          memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_lower(), size);
+          pushed_predicates++;
+        }
         break;
       case PredicateType::None:
         LOG(FATAL) << "NONE predicate can not be pushed into key";

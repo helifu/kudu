@@ -23,6 +23,7 @@
 
 #include "kudu/common/schema.h"
 #include "kudu/common/bloomfilter/bloom-filter.h"
+#include "kudu/common/bloomfilter/raw-value.inline.h"
 
 namespace kudu {
 
@@ -214,7 +215,7 @@ class ColumnPredicate {
             (DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) >= 0)) {
           return false;
         }
-        return bf_->Find(impala::GetHashValue<PhysicalType>(cell, impala::DEFAULT_HASH_SEED));
+        return bf_->Find(impala::GetHashValue<PhysicalType>(cell));
       }
     }
     LOG(FATAL) << "unknown predicate type";
@@ -256,7 +257,8 @@ class ColumnPredicate {
 
   // Returns the bloom filter if this is a bloom filter predicate.
   const impala::BloomFilter* bloom_filter() const {
-    return bf_.get();
+    //return bf_.get();
+    return bf_;
   }
 
  private:
@@ -340,9 +342,7 @@ class ColumnPredicate {
   std::vector<const void*> values_;
 
   // The bloom filter to check if the column value is in it.
-  // Attention: the arena can't hold a bloomfilter object (big memory) on the 
-  //            server side, so we have to use smart pointer in this class.
-  gscoped_ptr<impala::BloomFilter*> bf_;
+  impala::BloomFilter* bf_;
 };
 
 // Compares predicates according to selectivity. Predicates that match fewer

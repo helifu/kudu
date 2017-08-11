@@ -27,6 +27,10 @@
 # This module defines
 #  BOOST_DATE_TIME_SHARED_LIB, path to boost's date_time shared library
 #  BOOST_DATE_TIME_STATIC_LIB, path to boost's date_time static library
+#  BOOST_FILESYSTEM_SHARED_LIB, path to boost's filesystem shared library
+#  BOOST_FILESYSTEM_STATIC_LIB, path to boost's filesystem static library
+#  BOOST_SYSTEM_SHARED_LIB, path to boost's system shared library
+#  BOOST_SYSTEM_STATIC_LIB, path to boost's system static library
 #  BOOST_INCLUDE_DIR, patch to boost's headers
 #  BOOST_DATE_TIME_FOUND, whether boost has been found
 
@@ -41,6 +45,22 @@ find_library(BOOST_DATE_TIME_STATIC_LIB libboost_date_time.a
     NO_CMAKE_SYSTEM_PATH
     NO_SYSTEM_ENVIRONMENT_PATH)
 
+find_library(BOOST_FILESYSTEM_SHARED_LIB boost_filesystem
+    NO_CMAKE_SYSTEM_PATH
+    NO_SYSTEM_ENVIRONMENT_PATH)
+find_library(BOOST_FILESYSTEM_STATIC_LIB libboost_filesystem.a
+    NO_CMAKE_SYSTEM_PATH
+    NO_SYSTEM_ENVIRONMENT_PATH)
+
+find_library(BOOST_SYSTEM_SHARED_LIB boost_system
+    NO_CMAKE_SYSTEM_PATH
+    NO_SYSTEM_ENVIRONMENT_PATH)
+find_library(BOOST_SYSTEM_STATIC_LIB libboost_system.a
+    NO_CMAKE_SYSTEM_PATH
+    NO_SYSTEM_ENVIRONMENT_PATH)
+
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(BOOST_DATE_TIME REQUIRED_VARS
-    BOOST_DATE_TIME_SHARED_LIB BOOST_DATE_TIME_STATIC_LIB BOOST_INCLUDE_DIR)
+    BOOST_DATE_TIME_SHARED_LIB BOOST_DATE_TIME_STATIC_LIB
+    BOOST_FILESYSTEM_SHARED_LIB BOOST_FILESYSTEM_STATIC_LIB
+    BOOST_INCLUDE_DIR)

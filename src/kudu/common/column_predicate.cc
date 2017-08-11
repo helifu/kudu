@@ -170,13 +170,16 @@ ColumnPredicate ColumnPredicate::BloomFilter(ColumnSchema column,
                                              const void* upper, 
                                              impala::BloomFilter* value) {
   CHECK(value != nullptr);
-  return ColumnPredicate(PredicateType::BloomFilter, move(column), lower, upper, value);
+  ColumnPredicate pred(PredicateType::BloomFilter, move(column), lower, upper, value);
+  pred.Simplify();
+  return pred;
 }
 
 void ColumnPredicate::SetToNone() {
   predicate_type_ = PredicateType::None;
   lower_ = nullptr;
   upper_ = nullptr;
+  //bf_.reset();
   bf_ = nullptr;
 }
 
@@ -227,8 +230,8 @@ void ColumnPredicate::Simplify() {
         // List has only one value, so convert to Equality
         predicate_type_ = PredicateType::Equality;
         lower_ = values_[0];
+        upper_ = nullptr;
         values_.clear();
-        bf_ = nullptr;
       } else if (type_info->type() == BOOL) {
         // If this is a boolean IN list with both true and false in the list,
         // then we can just convert it to IS NOT NULL. This same simplification
@@ -238,8 +241,8 @@ void ColumnPredicate::Simplify() {
         lower_ = nullptr;
         upper_ = nullptr;
         values_.clear();
-        bf_ = nullptr;
       }
+      bf_ = nullptr;
       return;
     };
     case PredicateType::BloomFilter: {
@@ -356,11 +359,17 @@ void ColumnPredicate::MergeIntoRange(const ColumnPredicate& other) {
       return;
     };
     case PredicateType::BloomFilter: {
-      // There is only a bloom filter condition while a new BloomFilter 
-      // predicate is merged into existing predicate. That means there is
-      // no range conditions in 'other' which is the new predicate.
-      bf_ = other.bf_.release();
+      if (other.lower_ != nullptr &&
+          (lower_ == nullptr || column_.type_info()->Compare(lower_, other.lower_) < 0)) {
+        lower_ = other.lower_;
+      }
+      if (other.upper_ != nullptr &&
+          (upper_ == nullptr || column_.type_info()->Compare(upper_, other.upper_) > 0)) {
+        upper_ = other.upper_;
+      }
+      bf_ = other.bf_;
       predicate_type_ = PredicateType::BloomFilter;
+      Simplify();
       return;
     }
   }
@@ -401,7 +410,11 @@ void ColumnPredicate::MergeIntoEquality(const ColumnPredicate& other) {
       return;
     };
     case PredicateType::BloomFilter: {
-      // The equality value needs to be in the BloomFilter.
+      if ((other.lower_ != nullptr && column_.type_info()->Compare(other.lower_, lower_) > 0) ||
+          (other.upper_ != nullptr && column_.type_info()->Compare(other.upper_, lower_) <= 0)) {
+        SetToNone();
+        return;
+      }
       if (!other.CheckValueInBloomFilter(lower_)) {
         SetToNone();
       }
@@ -425,7 +438,7 @@ void ColumnPredicate::MergeIntoIsNotNull(const ColumnPredicate &other) {
       lower_ = other.lower_;
       upper_ = other.upper_;
       values_ = other.values_;
-      bf_ = other.bf_.release();
+      bf_ = other.bf_;
       return;
     }
   }
@@ -548,8 +561,19 @@ void ColumnPredicate::MergeIntoInList(const ColumnPredicate &other) {
       return;
     };
     case PredicateType::BloomFilter: {
-      // Iterator through the values_ list and remove elements that do not exist
-      // in the bloom filter.
+      auto search_by = [&] (const void* lhs, const void* rhs) {
+        return this->column_.type_info()->Compare(lhs, rhs) < 0;
+      };
+
+      if (other.upper_ != nullptr) {
+        auto upper = std::lower_bound(values_.begin(), values_.end(), other.upper_, search_by);
+        values_.erase(upper, values_.end());
+      }
+
+      if (other.lower_ != nullptr) {
+        auto lower = std::lower_bound(values_.begin(), values_.end(), other.lower_, search_by);
+        values_.erase(values_.begin(), lower);
+      }
       values_.erase(std::remove_if(values_.begin(), values_.end(),
                                    [&] (const void* v) {
                                      return !(other.CheckValueInBloomFilter(v));
@@ -639,7 +663,7 @@ void ColumnPredicate::MergeIntoBloomFilter(const ColumnPredicate& other) {
       return;
     };
     case PredicateType::BloomFilter: {
-      impala::BloomFilter::Or(other.bf_, bf_);
+      LOG(FATAL) << "bloomfilter doesn't merge with bloomfilter yet.";
       return;
     }
   }
@@ -742,7 +766,7 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
         });
       }
       ApplyPredicate(block, sel, [this] (const void* cell) {
-        return bf_->Find(impala::GetHashValue<PhysicalType>(cell, impala::DEFAULT_HASH_SEED));
+        return bf_->Find(impala::GetHashValue<PhysicalType>(cell));
       });
       return;
     }
@@ -871,7 +895,7 @@ bool ColumnPredicate::operator==(const ColumnPredicate& other) const {
              column_.type_info()->Compare(upper_, other.upper_) == 0))){
         return false;
       }
-      return this->bf_ == other.bf_;
+      return *(this->bf_) == *(other.bf_);
     }
   }
   LOG(FATAL) << "unknown predicate type";
@@ -892,7 +916,34 @@ bool ColumnPredicate::CheckValueInList(const void* value) const {
 
 bool ColumnPredicate::CheckValueInBloomFilter(const void* value) const {
   CHECK(predicate_type_ == PredicateType::BloomFilter);
-  return bf_->Find(impala::GetHashValue<column_.type_info().type()>(value, impala::DEFAULT_HASH_SEED))
+  switch (column_.type_info()->type()) {
+    case BOOL:
+      return bf_->Find(impala::GetHashValue<BOOL>(value));
+    case INT8:
+      return bf_->Find(impala::GetHashValue<INT8>(value));
+    case INT16:
+      return bf_->Find(impala::GetHashValue<INT16>(value));
+    case INT32:
+      return bf_->Find(impala::GetHashValue<INT32>(value));
+    case INT64:
+        return bf_->Find(impala::GetHashValue<INT64>(value));
+    case FLOAT:
+        return bf_->Find(impala::GetHashValue<FLOAT>(value));
+    case DOUBLE:
+        return bf_->Find(impala::GetHashValue<DOUBLE>(value));
+    case BINARY:
+    case STRING:
+        return bf_->Find(impala::GetHashValue<STRING>(value));
+    case UNIXTIME_MICROS:
+        return bf_->Find(impala::GetHashValue<UNIXTIME_MICROS>(value));
+    case UINT8:
+    case UINT16:
+    case UINT32:
+    case UINT64:
+    default: LOG(FATAL) << "Not support TYPE: " << column_.type_info()->type() 
+                        << " for COLUMN: " << column_.name();
+  }
+  return false;
 }
 
 namespace {
