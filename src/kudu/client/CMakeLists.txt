@@ -53,6 +53,8 @@ set(CLIENT_SRCS
   tablet-internal.cc
   tablet_server-internal.cc
   value.cc
+  value-bloomfilter
+  value-bloomfilter-internal
   write_op.cc
 )
 

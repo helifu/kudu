@@ -506,6 +506,8 @@ class KUDU_EXPORT KuduSchema {
   friend class internal::WriteRpc;
   friend class tools::RemoteKsckMaster;
   friend class tools::ReplicaDumper;
+  friend class KuduValueBloomFilter;
+  friend class KuduValueBloomFilterBuilder;
 
   friend KuduSchema KuduSchemaFromSchema(const Schema& schema);
 

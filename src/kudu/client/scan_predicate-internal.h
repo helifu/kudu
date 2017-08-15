@@ -22,6 +22,7 @@
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/value-internal.h"
 #include "kudu/client/value.h"
+#include "kudu/client/value-bloomfilter.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/memory/arena.h"
@@ -163,7 +164,7 @@ class IsNullPredicateData : public KuduPredicate::Data {
 // A list predicate for a column and a list of constant values.
 class BloomFilterPredicateData: public KuduPredicate::Data {
 public:
-  BloomFilterPredicateData(ColumnSchema col, impala::BloomFilter* value);
+  BloomFilterPredicateData(ColumnSchema col, KuduValueBloomFilter* value);
 
   virtual ~BloomFilterPredicateData();
 
@@ -177,7 +178,7 @@ private:
     friend class KuduScanner;
 
     ColumnSchema col_;
-    gscoped_ptr<impala::BloomFilter> val_;
+    gscoped_ptr<KuduValueBloomFilter> val_;
 };
 
 } // namespace client

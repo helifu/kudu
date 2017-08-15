@@ -140,7 +140,7 @@ Status InListPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) {
 }
 
 BloomFilterPredicateData::BloomFilterPredicateData(ColumnSchema col, 
-                                                   impala::BloomFilter* value)
+                                                   KuduValueBloomFilter* value)
     : col_(col),
     val_(value) {
 }
@@ -149,13 +149,10 @@ BloomFilterPredicateData::~BloomFilterPredicateData() {
 }
 
 Status BloomFilterPredicateData::AddToScanSpec(ScanSpec* spec, Arena* arena) {
-  /* ToDo: maybe wrapper BloomFilter later.
-  void* val_void;
-  RETURN_NOT_OK(val_->data_->CheckTypeAndGetPointer(col_.name(),
-                                                    col_.type_info()->physical_type(),
-                                                    &val_void));*/
-  // Use 'release' to assign the BF to ColumnPredicate.
-  spec->AddPredicate(ColumnPredicate::BloomFilter(col_, nullptr, nullptr, val_.release()));
+  spec->AddPredicate(ColumnPredicate::BloomFilter(col_,
+                                                  nullptr,
+                                                  nullptr,
+                                                  reinterpret_cast<impala::BloomFilter*>(val_->GetBloomFilter())));
   return Status::OK();
 }
 

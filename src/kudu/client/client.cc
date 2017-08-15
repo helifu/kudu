@@ -842,7 +842,7 @@ KuduPredicate* KuduTable::NewIsNullPredicate(const Slice& col_name) {
 }
 
 KuduPredicate* KuduTable::NewBloomFilterPredicate(const Slice& col_name, 
-                                                  impala::BloomFilter* value) {
+                                                  KuduValueBloomFilter* value) {
   // check whether value pointer is nullptr
   if (value == nullptr) return nullptr;
 

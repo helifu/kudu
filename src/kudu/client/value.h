@@ -62,6 +62,7 @@ class KUDU_EXPORT KuduValue {
   friend class ComparisonPredicateData;
   friend class InListPredicateData;
   friend class KuduColumnSpec;
+  friend class KuduValueBloomFilter;
 
   class KUDU_NO_EXPORT Data;
   explicit KuduValue(Data* d);
