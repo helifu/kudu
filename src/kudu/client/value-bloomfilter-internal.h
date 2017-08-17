@@ -28,9 +28,9 @@ namespace client {
 
 class KuduValueBloomFilter::Data {
 public:
-  explicit Data(KuduSchema* schema,
-                const std::string& col_name,
-                int log_heap_space);
+  explicit Data(const std::string& col_name,
+                const DataType type,
+                const int log_heap_space);
   explicit Data();
   ~Data();
 
@@ -43,8 +43,8 @@ public:
   impala::BloomFilter* GetBloomFilter() const;
 
 private:
-  gscoped_ptr<KuduSchema> schema_;
   std::string col_name_;
+  DataType type_;
   impala::BloomFilter* bf_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
@@ -55,16 +55,16 @@ public:
   explicit Data();
   ~Data();
 
-  void SetKuduSchema(KuduSchema* schema);
+  void SetKuduSchema(const KuduSchema* schema);
 
   void SetColumnName(const std::string& col_name);
 
   void SetLogSpace(const size_t ndv, const double fpp);
 
-  Status Build(sp::shared_ptr<KuduValueBloomFilter>* bloomfilter);
+  KuduValueBloomFilter* Build() const;
 
 private:
-  gscoped_ptr<KuduSchema> schema_;
+  const KuduSchema* schema_;
   std::string col_name_;
   int log_heap_space_;
 

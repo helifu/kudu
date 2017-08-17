@@ -35,14 +35,12 @@ KuduValueBloomFilter* KuduValueBloomFilter::Clone() const {
   return one;
 }
 
-void KuduValueBloomFilter::Insert(KuduValue* value) {
-  /*gscoped_ptr<KuduValue> one(value);*/
+void KuduValueBloomFilter::Insert(const KuduValue* value) {
   data_->Insert(value);
   return;
 }
 
-bool KuduValueBloomFilter::Find(KuduValue* value) const {
-  /*gscoped_ptr<KuduValue> one(value);*/
+bool KuduValueBloomFilter::Find(const KuduValue* value) const {
   return data_->Find(value);
 }
 
@@ -58,12 +56,12 @@ KuduValueBloomFilterBuilder::~KuduValueBloomFilterBuilder() {
   delete data_;
 }
 
-KuduValueBloomFilterBuilder& KuduValueBloomFilterBuilder::SetKuduSchema(KuduSchema* schema) {
+KuduValueBloomFilterBuilder& KuduValueBloomFilterBuilder::SetKuduSchema(const KuduSchema* schema) {
   data_->SetKuduSchema(schema);
   return *this;
 }
 
-KuduValueBloomFilterBuilder& KuduValueBloomFilterBuilder::SetColumnName(std::string& col_name) {
+KuduValueBloomFilterBuilder& KuduValueBloomFilterBuilder::SetColumnName(const std::string& col_name) {
   data_->SetColumnName(col_name);
   return *this;
 }
@@ -73,8 +71,8 @@ KuduValueBloomFilterBuilder& KuduValueBloomFilterBuilder::SetLogSpace(const size
   return *this;
 }
 
-Status KuduValueBloomFilterBuilder::Build(sp::shared_ptr<KuduValueBloomFilter>* bloomfilter) {
-  return data_->Build(bloomfilter);
+KuduValueBloomFilter* KuduValueBloomFilterBuilder::Build() const {
+  return data_->Build();
 }
 
 } // namespace client

@@ -26,89 +26,89 @@
 namespace kudu {
 namespace client {
 
-KuduValueBloomFilter::Data::Data(KuduSchema* schema,
-                                 const std::string& col_name,
-                                 int log_heap_space)
-  : schema_(schema)
-  , col_name_(col_name)
+KuduValueBloomFilter::Data::Data(const std::string& col_name,
+                                 const DataType type, 
+                                 const int log_heap_space)
+  : col_name_(col_name)
+  , type_(type)
   , bf_(new impala::BloomFilter(log_heap_space)) {
 }
 
 KuduValueBloomFilter::Data::Data()
   : col_name_("")
+  , type_(UNKNOWN_DATA)
   , bf_(nullptr) {
 }
 
 KuduValueBloomFilter::Data::~Data() {
-  delete bf_;
+  if (bf_) {
+    delete bf_;
+    bf_ = nullptr;
+  }
 }
 
 KuduValueBloomFilter::Data* KuduValueBloomFilter::Data::Clone() const {
   KuduValueBloomFilter::Data* one = new KuduValueBloomFilter::Data();
-  one->schema_.reset(new KuduSchema(*this->schema_));
   one->col_name_ = this->col_name_;
+  one->type_ = this->type_;
   one->bf_ = this->bf_->Clone();
   return one;
 }
 
 void KuduValueBloomFilter::Data::Insert(const KuduValue* value) {
-  int col_idx = schema_->schema_->find_column(col_name_);
-  const ColumnSchema& col_schema = schema_->schema_->column(col_idx);
-  DataType type = col_schema.type_info()->physical_type();
-
-  void* val_void;
-  value->data_->CheckTypeAndGetPointer(col_schema.name(), type, &val_void);
-  switch (type) {
+  void* val_void = nullptr;
+  value->data_->CheckTypeAndGetPointer(col_name_, type_, &val_void);
+  switch (type_) {
   case INT8:
     {
-      int8_t v = *reinterpret_cast<const int64_t*>(value);
+      int8_t v = *reinterpret_cast<const int64_t*>(val_void);
       bf_->Insert(impala::GetHashValue<INT8>(&v));
       break;
     }
   case INT16:
     {
-      int16_t v = *reinterpret_cast<const int64_t*>(value);
+      int16_t v = *reinterpret_cast<const int64_t*>(val_void);
       bf_->Insert(impala::GetHashValue<INT16>(&v));
       break;
     }
   case INT32:
     {
-      int32_t v = *reinterpret_cast<const int64_t*>(value);
+      int32_t v = *reinterpret_cast<const int64_t*>(val_void);
       bf_->Insert(impala::GetHashValue<INT32>(&v));
       break;
     }
   case kudu::INT64:
     {
-      int64_t v = *reinterpret_cast<const int64_t*>(value);
+      int64_t v = *reinterpret_cast<const int64_t*>(val_void);
       bf_->Insert(impala::GetHashValue<INT64>(&v));
       break;
     }
   case kudu::BOOL:
     {
-      bool v = *reinterpret_cast<const int64_t*>(value) ? true : false;
+      bool v = *reinterpret_cast<const int64_t*>(val_void) ? true : false;
       bf_->Insert(impala::GetHashValue<BOOL>(&v));
       break;
     }
   case kudu::FLOAT:
     {
-      float v = *reinterpret_cast<const int64_t*>(value);
+      float v = *reinterpret_cast<const int64_t*>(val_void);
       bf_->Insert(impala::GetHashValue<FLOAT>(&v));
       break;
     }
   case kudu::DOUBLE:
     {
-      double v = *reinterpret_cast<const int64_t*>(value);
+      double v = *reinterpret_cast<const int64_t*>(val_void);
       bf_->Insert(impala::GetHashValue<DOUBLE>(&v));
       break;
     }
   case kudu::BINARY:
     {
-      bf_->Insert(impala::GetHashValue<STRING>(value));
+      bf_->Insert(impala::GetHashValue<STRING>(val_void));
       break;
     }
   default:
     {
-      LOG(FATAL) << strings::Substitute("Unexpected physical type: %0", type);
+      LOG(FATAL) << strings::Substitute("Unexpected physical type: %0", type_);
       break;
     }
   }
@@ -116,56 +116,52 @@ void KuduValueBloomFilter::Data::Insert(const KuduValue* value) {
 }
 
 bool KuduValueBloomFilter::Data::Find(const KuduValue* value) const {
-  int col_idx = schema_->schema_->find_column(col_name_);
-  const ColumnSchema& col_schema = schema_->schema_->column(col_idx);
-  DataType type = col_schema.type_info()->physical_type();
-
-  void* val_void;
-  value->data_->CheckTypeAndGetPointer(col_schema.name(), type, &val_void);
-  switch (type)
+  void* val_void = nullptr;
+  value->data_->CheckTypeAndGetPointer(col_name_, type_, &val_void);
+  switch (type_)
   {
   case kudu::INT8:
     {
-      int8_t v = *reinterpret_cast<const int64_t*>(value);
+      int8_t v = *reinterpret_cast<const int64_t*>(val_void);
       return bf_->Find(impala::GetHashValue<INT8>(&v));
     }
   case kudu::INT16:
     {
-      int16_t v = *reinterpret_cast<const int64_t*>(value);
+      int16_t v = *reinterpret_cast<const int64_t*>(val_void);
       return bf_->Find(impala::GetHashValue<INT16>(&v));
     }
   case kudu::INT32:
     {
-      int32_t v = *reinterpret_cast<const int64_t*>(value);
+      int32_t v = *reinterpret_cast<const int64_t*>(val_void);
       return bf_->Find(impala::GetHashValue<INT32>(&v));
     }
   case kudu::INT64:
     {
-      int64_t v = *reinterpret_cast<const int64_t*>(value);
+      int64_t v = *reinterpret_cast<const int64_t*>(val_void);
       return bf_->Find(impala::GetHashValue<INT64>(&v));
     }
   case kudu::BOOL:
     {
-      bool v = *reinterpret_cast<const int64_t*>(value) ? true : false;
+      bool v = *reinterpret_cast<const int64_t*>(val_void) ? true : false;
       return bf_->Find(impala::GetHashValue<BOOL>(&v));
     }
   case kudu::FLOAT:
     {
-      float v = *reinterpret_cast<const int64_t*>(value);
+      float v = *reinterpret_cast<const int64_t*>(val_void);
       return bf_->Find(impala::GetHashValue<FLOAT>(&v));
     }
   case kudu::DOUBLE:
     {
-      double v = *reinterpret_cast<const int64_t*>(value);
+      double v = *reinterpret_cast<const int64_t*>(val_void);
       return bf_->Find(impala::GetHashValue<DOUBLE>(&v));
     }
   case kudu::BINARY:
     {
-      return bf_->Find(impala::GetHashValue<STRING>(value));
+      return bf_->Find(impala::GetHashValue<STRING>(val_void));
     }
   default:
     {
-      LOG(FATAL) << strings::Substitute("Unexpected physical type: %0", type);
+      LOG(FATAL) << strings::Substitute("Unexpected physical type: %0", type_);
       break;
     }
   }
@@ -185,8 +181,8 @@ KuduValueBloomFilterBuilder::Data::Data()
 KuduValueBloomFilterBuilder::Data::~Data() {
 }
 
-void KuduValueBloomFilterBuilder::Data::SetKuduSchema(KuduSchema* schema) {
-  schema_.reset(schema);
+void KuduValueBloomFilterBuilder::Data::SetKuduSchema(const KuduSchema* schema) {
+  schema_ = schema;
   return;
 }
 
@@ -200,22 +196,24 @@ void KuduValueBloomFilterBuilder::Data::SetLogSpace(const size_t ndv, const doub
   return;
 }
 
-Status KuduValueBloomFilterBuilder::Data::Build(sp::shared_ptr<KuduValueBloomFilter>* bloomfilter) {
+KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build() const {
   if (schema_ == nullptr ||
       col_name_.empty() ||
       log_heap_space_ == 0) {
-    return Status::Uninitialized("the parameters have not been set yet.");
+    return nullptr;
   }
 
   int col_idx = schema_->schema_->find_column(col_name_);
   if (col_idx == Schema::kColumnNotFound) {
-    return Status::NotFound("the column %0 is not found.", col_name_);
+    return nullptr;
   }
 
-  sp::shared_ptr<KuduValueBloomFilter> one(new KuduValueBloomFilter());
-  one->data_ = new KuduValueBloomFilter::Data(schema_.release(), col_name_, log_heap_space_);
-  bloomfilter->swap(one);
-  return Status::OK();
+  const ColumnSchema& col_schema = schema_->schema_->column(col_idx);
+  DataType type = col_schema.type_info()->physical_type();
+
+  KuduValueBloomFilter* one = new KuduValueBloomFilter();
+  one->data_ = new KuduValueBloomFilter::Data(col_name_, type, log_heap_space_);
+  return one;
 }
 
 } // namespace client

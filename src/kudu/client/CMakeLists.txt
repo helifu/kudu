@@ -184,6 +184,7 @@ install(FILES
   value.h
   write_op.h
   resource_metrics.h
+  value-bloomfilter.h
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kudu/client)
 
 # Headers: common

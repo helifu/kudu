@@ -45,14 +45,14 @@ public:
   ///
   /// @param [in] value
   ///   The KuduValueBloomFilter takes the ownership over the value.
-  void Insert(KuduValue* value);
+  void Insert(const KuduValue* value);
 
   /// @Check whether A KuduValue is in the BloomFilter.
   ///
   /// @param [in] value
   ///   The KuduValueBloomFilter takes the ownership over the value.
   /// @return true if the value is in the BloomFilter.
-  bool Find(KuduValue* value) const;
+  bool Find(const KuduValue* value) const;
 
   /// @return the BloomFilter pointer.
   void* GetBloomFilter() const;
@@ -82,16 +82,16 @@ public:
   ~KuduValueBloomFilterBuilder();
 
   /// @Set Schema for the BloomFilter.
-  KuduValueBloomFilterBuilder& SetKuduSchema(KuduSchema* schema);
+  KuduValueBloomFilterBuilder& SetKuduSchema(const KuduSchema* schema);
 
   /// @Set Column  for the BloomFilter.
-  KuduValueBloomFilterBuilder& SetColumnName(std::string& col_name);
+  KuduValueBloomFilterBuilder& SetColumnName(const std::string& col_name);
 
   /// @Set the log heap space for the BloomFilter
   KuduValueBloomFilterBuilder& SetLogSpace(const size_t ndv, const double fpp);
 
-  /// @Return a BloomFilter after setting before.
-  Status Build(sp::shared_ptr<KuduValueBloomFilter>* bloomfilter);
+  /// @Return a BloomFilter after setting.
+  KuduValueBloomFilter* Build() const;
 
 private:
   class KUDU_NO_EXPORT Data;
