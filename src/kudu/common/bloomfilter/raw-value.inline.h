@@ -93,6 +93,11 @@ inline uint32_t GetHashValueNonNull<STRING>(const void* v, uint32_t seed) {
 }
 
 template<>
+inline uint32_t GetHashValueNonNull<BINARY>(const void* v, uint32_t seed) {
+  return GetHashValueNonNull<STRING>(v, seed);
+}
+
+template<>
 inline uint32_t GetHashValueNonNull<BOOL>(const void* v, uint32_t seed) {
   DCHECK(v != NULL);
   return HashUtil::HashCombine32(*reinterpret_cast<const bool*>(v), seed);
