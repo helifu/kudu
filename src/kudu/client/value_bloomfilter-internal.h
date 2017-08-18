@@ -19,7 +19,7 @@
 
 #include <string>
 
-#include "kudu/client/value-bloomfilter.h"
+#include "kudu/client/value_bloomfilter.h"
 #include "kudu/common/bloomfilter/bloom-filter.h"
 #include "kudu/gutil/gscoped_ptr.h"
 

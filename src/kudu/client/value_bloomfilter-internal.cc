@@ -18,7 +18,7 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/value.h"
 #include "kudu/client/value-internal.h"
-#include "kudu/client/value-bloomfilter-internal.h"
+#include "kudu/client/value_bloomfilter-internal.h"
 #include "kudu/common/bloomfilter/raw-value.inline.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/substitute.h"

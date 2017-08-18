@@ -53,8 +53,8 @@ set(CLIENT_SRCS
   tablet-internal.cc
   tablet_server-internal.cc
   value.cc
-  value-bloomfilter
-  value-bloomfilter-internal
+  value_bloomfilter
+  value_bloomfilter-internal
   write_op.cc
 )
 
@@ -184,7 +184,7 @@ install(FILES
   value.h
   write_op.h
   resource_metrics.h
-  value-bloomfilter.h
+  value_bloomfilter.h
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kudu/client)
 
 # Headers: common

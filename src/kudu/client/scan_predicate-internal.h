@@ -22,7 +22,7 @@
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/value-internal.h"
 #include "kudu/client/value.h"
-#include "kudu/client/value-bloomfilter.h"
+#include "kudu/client/value_bloomfilter.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/memory/arena.h"

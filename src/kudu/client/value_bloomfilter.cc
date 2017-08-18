@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/client/value-bloomfilter.h"
-#include "kudu/client/value-bloomfilter-internal.h"
+#include "kudu/client/value_bloomfilter.h"
+#include "kudu/client/value_bloomfilter-internal.h"
 
 namespace kudu {
 namespace client {
