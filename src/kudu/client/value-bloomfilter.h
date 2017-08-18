@@ -39,22 +39,24 @@ namespace client {
 class KUDU_EXPORT KuduValueBloomFilter {
 public:
   /// @return A new identical KuduValueBloomFilter object.
+  ///   The caller takes the ownership of the object.
   KuduValueBloomFilter* Clone() const;
 
   /// @Add A KuduValue to the BloomFilter.
   ///
   /// @param [in] value
-  ///   The KuduValueBloomFilter takes the ownership over the value.
+  ///   Value to insert.
   void Insert(const KuduValue* value);
 
   /// @Check whether A KuduValue is in the BloomFilter.
   ///
   /// @param [in] value
-  ///   The KuduValueBloomFilter takes the ownership over the value.
+  ///   Value to find.
   /// @return true if the value is in the BloomFilter.
   bool Find(const KuduValue* value) const;
 
   /// @return the BloomFilter pointer.
+  ///   The caller won't take the ownership of the BloomFilter.
   void* GetBloomFilter() const;
 
   ~KuduValueBloomFilter();
@@ -81,17 +83,33 @@ public:
   KuduValueBloomFilterBuilder();
   ~KuduValueBloomFilterBuilder();
 
-  /// @Set Schema for the BloomFilter.
+  /// @Set Schema for the KuduValueBloomFilter.
   KuduValueBloomFilterBuilder& SetKuduSchema(const KuduSchema* schema);
 
-  /// @Set Column  for the BloomFilter.
+  /// @Set Column  for the KuduValueBloomFilter.
   KuduValueBloomFilterBuilder& SetColumnName(const std::string& col_name);
 
-  /// @Set the log heap space for the BloomFilter
+  /// @Set the log heap space for the KuduValueBloomFilter
   KuduValueBloomFilterBuilder& SetLogSpace(const size_t ndv, const double fpp);
 
-  /// @Return a BloomFilter after setting.
+  /// @brief
+  ///   The caller must call SetKuduSchema & SetColumnName & SetLogSpace before 
+  ///   calling Build, otherwise it won't succeed.
+  /// @Return a KuduValueBloomFilter object.
+  ///   The caller owns the result until it is passed into
+  ///   KuduScanner::AddConjunctPredicate().
   KuduValueBloomFilter* Build() const;
+
+  /// @brief
+  ///   It's not necessary to call SetKuduSchema & SetColumnName before calling
+  ///   Build, but if you want to call Insert or Find continually so you have to.
+  /// @param [in] bf
+  ///   The API takes the ownership of the 'bf' instead of caller.
+  ///   The caller can Insert/Find
+  /// @Return a KuduValueBloomFilter object.
+  ///   The caller owns the result until it is passed into
+  ///   KuduScanner::AddConjunctPredicate().
+  KuduValueBloomFilter* Build(void* bf) const;
 
 private:
   class KUDU_NO_EXPORT Data;

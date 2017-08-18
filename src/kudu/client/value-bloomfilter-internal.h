@@ -31,7 +31,8 @@ public:
   explicit Data(const std::string& col_name,
                 const DataType type,
                 const int log_heap_space);
-  explicit Data();
+  explicit Data(const std::string& col_name,
+                const DataType type);
   ~Data();
 
   KuduValueBloomFilter::Data* Clone() const;
@@ -41,6 +42,8 @@ public:
   bool Find(const KuduValue* value) const;
 
   impala::BloomFilter* GetBloomFilter() const;
+
+  void SetBloomFilter(impala::BloomFilter* bf);
 
 private:
   std::string col_name_;
@@ -62,6 +65,8 @@ public:
   void SetLogSpace(const size_t ndv, const double fpp);
 
   KuduValueBloomFilter* Build() const;
+
+  KuduValueBloomFilter* Build(void* bf) const;
 
 private:
   const KuduSchema* schema_;

@@ -34,9 +34,10 @@ KuduValueBloomFilter::Data::Data(const std::string& col_name,
   , bf_(new impala::BloomFilter(log_heap_space)) {
 }
 
-KuduValueBloomFilter::Data::Data()
-  : col_name_("")
-  , type_(UNKNOWN_DATA)
+KuduValueBloomFilter::Data::Data(const std::string& col_name,
+                                 const DataType type)
+  : col_name_(col_name)
+  , type_(type)
   , bf_(nullptr) {
 }
 
@@ -48,30 +49,29 @@ KuduValueBloomFilter::Data::~Data() {
 }
 
 KuduValueBloomFilter::Data* KuduValueBloomFilter::Data::Clone() const {
-  KuduValueBloomFilter::Data* one = new KuduValueBloomFilter::Data();
-  one->col_name_ = this->col_name_;
-  one->type_ = this->type_;
-  one->bf_ = this->bf_->Clone();
+  KuduValueBloomFilter::Data* one = new KuduValueBloomFilter::Data(this->col_name_, this->type_);
+  one->SetBloomFilter(this->bf_->Clone());
   return one;
 }
 
 void KuduValueBloomFilter::Data::Insert(const KuduValue* value) {
+  if (type_ == kudu::UNKNOWN_DATA) return;
   void* val_void = nullptr;
   value->data_->CheckTypeAndGetPointer(col_name_, type_, &val_void);
   switch (type_) {
-  case INT8:
+  case kudu::INT8:
     {
       int8_t v = *reinterpret_cast<const int64_t*>(val_void);
       bf_->Insert(impala::GetHashValue<INT8>(&v));
       break;
     }
-  case INT16:
+  case kudu::INT16:
     {
       int16_t v = *reinterpret_cast<const int64_t*>(val_void);
       bf_->Insert(impala::GetHashValue<INT16>(&v));
       break;
     }
-  case INT32:
+  case kudu::INT32:
     {
       int32_t v = *reinterpret_cast<const int64_t*>(val_void);
       bf_->Insert(impala::GetHashValue<INT32>(&v));
@@ -116,6 +116,7 @@ void KuduValueBloomFilter::Data::Insert(const KuduValue* value) {
 }
 
 bool KuduValueBloomFilter::Data::Find(const KuduValue* value) const {
+  if (type_ == kudu::UNKNOWN_DATA) return false;
   void* val_void = nullptr;
   value->data_->CheckTypeAndGetPointer(col_name_, type_, &val_void);
   switch (type_)
@@ -172,6 +173,11 @@ impala::BloomFilter* KuduValueBloomFilter::Data::GetBloomFilter() const {
   return bf_;
 }
 
+void KuduValueBloomFilter::Data::SetBloomFilter(impala::BloomFilter* bf) {
+  bf_ = bf;
+  return;
+}
+
 KuduValueBloomFilterBuilder::Data::Data()
   : schema_(nullptr)
   , col_name_("")
@@ -213,6 +219,25 @@ KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build() const {
 
   KuduValueBloomFilter* one = new KuduValueBloomFilter();
   one->data_ = new KuduValueBloomFilter::Data(col_name_, type, log_heap_space_);
+  return one;
+}
+
+KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build(void* bf) const {
+  if (bf == nullptr) return nullptr;
+
+  DataType type = kudu::UNKNOWN_DATA;
+  if (schema_ != nullptr && !col_name_.empty()) {
+    int col_idx = schema_->schema_->find_column(col_name_);
+    if (col_idx == Schema::kColumnNotFound) {
+      return nullptr;
+    }
+    const ColumnSchema& col_schema = schema_->schema_->column(col_idx);
+    type = col_schema.type_info()->physical_type();
+  }
+
+  KuduValueBloomFilter* one = new KuduValueBloomFilter();
+  one->data_ = new KuduValueBloomFilter::Data(col_name_, type);
+  one->data_->SetBloomFilter(reinterpret_cast<impala::BloomFilter*>(bf));
   return one;
 }
 
