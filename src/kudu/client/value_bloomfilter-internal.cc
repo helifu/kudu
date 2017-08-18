@@ -222,7 +222,7 @@ KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build() const {
   return one;
 }
 
-KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build(void* bf) const {
+KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build(const void* bf) const {
   if (bf == nullptr) return nullptr;
 
   DataType type = kudu::UNKNOWN_DATA;
@@ -237,7 +237,7 @@ KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build(void* bf) const {
 
   KuduValueBloomFilter* one = new KuduValueBloomFilter();
   one->data_ = new KuduValueBloomFilter::Data(col_name_, type);
-  one->data_->SetBloomFilter(reinterpret_cast<impala::BloomFilter*>(bf));
+  one->data_->SetBloomFilter((reinterpret_cast<const impala::BloomFilter*>(bf))->Clone());
   return one;
 }
 

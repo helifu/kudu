@@ -152,7 +152,7 @@ Status BloomFilterPredicateData::AddToScanSpec(ScanSpec* spec, Arena* arena) {
   spec->AddPredicate(ColumnPredicate::BloomFilter(col_,
                                                   nullptr,
                                                   nullptr,
-                                                  reinterpret_cast<impala::BloomFilter*>(val_->GetBloomFilter())));
+                                                  val_->data_->GetBloomFilter()));
   return Status::OK();
 }
 

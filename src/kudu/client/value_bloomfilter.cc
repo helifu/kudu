@@ -44,10 +44,6 @@ bool KuduValueBloomFilter::Find(const KuduValue* value) const {
   return data_->Find(value);
 }
 
-void* KuduValueBloomFilter::GetBloomFilter() const{
-  return data_->GetBloomFilter();
-}
-
 KuduValueBloomFilterBuilder::KuduValueBloomFilterBuilder()
   : data_(new KuduValueBloomFilterBuilder::Data()) {
 }
@@ -75,7 +71,7 @@ KuduValueBloomFilter* KuduValueBloomFilterBuilder::Build() const {
   return data_->Build();
 }
 
-KuduValueBloomFilter* KuduValueBloomFilterBuilder::Build(void* bf) const {
+KuduValueBloomFilter* KuduValueBloomFilterBuilder::Build(const void* bf) const {
   return data_->Build(bf);
 }
 

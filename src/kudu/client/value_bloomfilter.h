@@ -55,10 +55,6 @@ public:
   /// @return true if the value is in the BloomFilter.
   bool Find(const KuduValue* value) const;
 
-  /// @return the BloomFilter pointer.
-  ///   The caller won't take the ownership of the BloomFilter.
-  void* GetBloomFilter() const;
-
   ~KuduValueBloomFilter();
 
 private:
@@ -104,12 +100,11 @@ public:
   ///   It's not necessary to call SetKuduSchema & SetColumnName before calling
   ///   Build, but if you want to call Insert or Find continually so you have to.
   /// @param [in] bf
-  ///   The API takes the ownership of the 'bf' instead of caller.
-  ///   The caller can Insert/Find
+  ///   The API will clone the 'bf' object inside.
   /// @Return a KuduValueBloomFilter object.
   ///   The caller owns the result until it is passed into
   ///   KuduScanner::AddConjunctPredicate().
-  KuduValueBloomFilter* Build(void* bf) const;
+  KuduValueBloomFilter* Build(const void* bf) const;
 
 private:
   class KUDU_NO_EXPORT Data;
