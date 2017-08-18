@@ -91,17 +91,17 @@ void KuduValueBloomFilter::Data::Insert(const KuduValue* value) {
     }
   case kudu::FLOAT:
     {
-      float v = *reinterpret_cast<const int64_t*>(val_void);
+      float v = *reinterpret_cast<const float*>(val_void);
       bf_->Insert(impala::GetHashValue<FLOAT>(&v));
       break;
     }
   case kudu::DOUBLE:
     {
-      double v = *reinterpret_cast<const int64_t*>(val_void);
+      double v = *reinterpret_cast<const double*>(val_void);
       bf_->Insert(impala::GetHashValue<DOUBLE>(&v));
       break;
     }
-  case kudu::BINARY:
+  case kudu::BINARY:// physicaltype: STRING -> BINARY
     {
       bf_->Insert(impala::GetHashValue<STRING>(val_void));
       break;
@@ -148,12 +148,12 @@ bool KuduValueBloomFilter::Data::Find(const KuduValue* value) const {
     }
   case kudu::FLOAT:
     {
-      float v = *reinterpret_cast<const int64_t*>(val_void);
+      float v = *reinterpret_cast<const float*>(val_void);
       return bf_->Find(impala::GetHashValue<FLOAT>(&v));
     }
   case kudu::DOUBLE:
     {
-      double v = *reinterpret_cast<const int64_t*>(val_void);
+      double v = *reinterpret_cast<const double*>(val_void);
       return bf_->Find(impala::GetHashValue<DOUBLE>(&v));
     }
   case kudu::BINARY:

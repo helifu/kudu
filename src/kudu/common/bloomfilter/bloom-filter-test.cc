@@ -75,9 +75,9 @@ void BfUnion(const BloomFilter* x, BloomFilter* y, bool* success) {
   uint8_t* directory = static_cast<uint8_t*>(arena.AllocateBytesAligned(pb_x.directory().size(), 16));
   memcpy(directory, pb_x.directory().data(), pb_x.directory().size());
   BloomFilter* x1 = arena.NewObject<BloomFilter>(pb_x.log_heap_space(), directory);
-  directory = static_cast<uint8_t*>(arena.AllocateBytesAligned(pb_y.directory().size(), 16));
+  /*directory = static_cast<uint8_t*>(arena.AllocateBytesAligned(pb_y.directory().size(), 16));
   memcpy(directory, pb_y.directory().data(), pb_y.directory().size());
-  BloomFilter* y1 = arena.NewObject<BloomFilter>(pb_y.log_heap_space(), directory);
+  BloomFilter* y1 = arena.NewObject<BloomFilter>(pb_y.log_heap_space(), directory);*/
   BloomFilter::Or(x1, y);
   {
     CpuInfo::TempDisable t1(CpuInfo::AVX);

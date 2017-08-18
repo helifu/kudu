@@ -32,6 +32,7 @@
 #include "glog/logging.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/bloomfilter/hash-util.h"
+#include "kudu/util/slice.h"
 
 using boost::posix_time::nanoseconds;
 using boost::posix_time::ptime;
@@ -118,23 +119,7 @@ inline uint32_t GetHashValueNonNull<DOUBLE>(const void* v, uint32_t seed) {
 template<>
 inline uint32_t GetHashValueNonNull<UNIXTIME_MICROS>(const void* v, uint32_t seed) {
   DCHECK(v != NULL);
-
-  // convert unixtime to Impala's TimestampValue.
-  int64_t unixtime = *reinterpret_cast<const int64_t*>(v);
-  int64_t seconds = unixtime / MICROS_PER_SEC;
-  int64_t micros = unixtime - (seconds * MICROS_PER_SEC);
-
-  tm t;
-  gmtime_r(&seconds, &t); /* localtime_r(&seconds, &t); */
-  boost::posix_time::ptime p = ptime_from_tm(t);
-  p += boost::posix_time::microseconds(micros);
-  boost::posix_time::time_duration time = p.time_of_day();
-  boost::gregorian::date date = p.date();
-
-  char b[12];
-  memcpy(b, &time, 8);
-  memcpy(b+8, &date, 4);
-  return HashUtil::MurmurHash2_64(b, 12, seed);
+  return GetHashValueNonNull<INT64>(v, seed);
 }
 
 template<DataType T>
