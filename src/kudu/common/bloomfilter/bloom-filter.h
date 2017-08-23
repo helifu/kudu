@@ -179,7 +179,7 @@ class BloomFilter {
 
 inline void ALWAYS_INLINE BloomFilter::Insert(const uint32_t hash) noexcept {
   const uint32_t bucket_idx = HashUtil::Rehash32to32(hash) & directory_mask_;
-  if (CpuInfo::IsSupported(CpuInfo::AVX2)) {
+  if (HashUtil::cpu_.has_avx2()) {
     BucketInsertAVX2(bucket_idx, hash);
   } else {
     BucketInsert(bucket_idx, hash);
@@ -188,7 +188,7 @@ inline void ALWAYS_INLINE BloomFilter::Insert(const uint32_t hash) noexcept {
 
 inline bool ALWAYS_INLINE BloomFilter::Find(const uint32_t hash) const noexcept {
   const uint32_t bucket_idx = HashUtil::Rehash32to32(hash) & directory_mask_;
-  if (CpuInfo::IsSupported(CpuInfo::AVX2)) {
+  if (HashUtil::cpu_.has_avx2()) {
     return BucketFindAVX2(bucket_idx, hash);
   } else {
     return BucketFind(bucket_idx, hash);

@@ -99,8 +99,9 @@ public:
   /// @brief
   ///   It's not necessary to call SetKuduSchema & SetColumnName before calling
   ///   Build, but if you want to call Insert or Find continually so you have to.
+  ///   Attention: It's only used for impala specially now.
   /// @param [in] bf
-  ///   The API will clone the 'bf' object inside.
+  ///   The API will not owner the 'bf' object inside.
   /// @Return a KuduValueBloomFilter object.
   ///   The caller owns the result until it is passed into
   ///   KuduScanner::AddConjunctPredicate().

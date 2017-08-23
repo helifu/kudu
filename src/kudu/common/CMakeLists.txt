@@ -40,9 +40,7 @@ ADD_EXPORTABLE_LIBRARY(wire_protocol_proto
   NONLINK_DEPS ${WIRE_PROTOCOL_PROTO_TGTS})
 
 set(COMMON_SRCS
-  bloomfilter/bloom-filter-test.cc
   bloomfilter/bloom-filter.cc
-  bloomfilter/cpu-info.cc
   bloomfilter/hash-util-ir.cc
   column_predicate.cc
   encoded_key.cc

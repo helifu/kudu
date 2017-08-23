@@ -49,6 +49,7 @@ private:
   std::string col_name_;
   DataType type_;
   impala_kudu::BloomFilter* bf_;
+  bool bf_need_free_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

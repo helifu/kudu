@@ -44,3 +44,6 @@ uint32_t IrCrcHash(const void* data, int32_t bytes, uint32_t hash) {
 #error "This file should only be compiled by clang."
 #endif
 
+namespace impala_kudu {
+const base::CPU HashUtil::cpu_;
+}

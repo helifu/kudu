@@ -31,18 +31,20 @@ KuduValueBloomFilter::Data::Data(const std::string& col_name,
                                  const int log_heap_space)
   : col_name_(col_name)
   , type_(type)
-  , bf_(new impala_kudu::BloomFilter(log_heap_space)) {
+  , bf_(new impala_kudu::BloomFilter(log_heap_space))
+  , bf_need_free_(true) {
 }
 
 KuduValueBloomFilter::Data::Data(const std::string& col_name,
                                  const DataType type)
   : col_name_(col_name)
   , type_(type)
-  , bf_(nullptr) {
+  , bf_(nullptr)
+  , bf_need_free_(false) {
 }
 
 KuduValueBloomFilter::Data::~Data() {
-  if (bf_) {
+  if (bf_need_free_ && bf_) {
     delete bf_;
     bf_ = nullptr;
   }
@@ -50,7 +52,8 @@ KuduValueBloomFilter::Data::~Data() {
 
 KuduValueBloomFilter::Data* KuduValueBloomFilter::Data::Clone() const {
   KuduValueBloomFilter::Data* one = new KuduValueBloomFilter::Data(this->col_name_, this->type_);
-  one->SetBloomFilter(this->bf_->Clone());
+  one->bf_ = this->bf_->Clone();
+  one->bf_need_free_ = true;
   return one;
 }
 
@@ -237,7 +240,8 @@ KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build(const void* bf) c
 
   KuduValueBloomFilter* one = new KuduValueBloomFilter();
   one->data_ = new KuduValueBloomFilter::Data(col_name_, type);
-  one->data_->SetBloomFilter((reinterpret_cast<const impala_kudu::BloomFilter*>(bf))->Clone());
+  /* we won't clone the input bf, so it's a bit of danger!! */
+  one->data_->SetBloomFilter(reinterpret_cast<impala_kudu::BloomFilter*>bf);
   return one;
 }
 

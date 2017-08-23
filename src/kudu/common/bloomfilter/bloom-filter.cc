@@ -173,7 +173,7 @@ void BloomFilter::Or(const BloomFilter* in, BloomFilter* out) {
   //
   // TODO: Tune gcc flags to auto-vectorize the trivial loop instead of hand-vectorizing
   // it. This might not be possible.
-  if (CpuInfo::IsSupported(CpuInfo::AVX)) {
+  if (HashUtil::cpu_.has_avx()) {
     OrEqualArrayAvx(in->directory_size(), 
                     reinterpret_cast<const char*>(in->directory_),
                     reinterpret_cast<char*>(out->directory_));
