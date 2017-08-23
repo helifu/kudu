@@ -225,7 +225,7 @@ KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build() const {
   return one;
 }
 
-KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build(const void* bf) const {
+KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build(void* bf) const {
   if (bf == nullptr) return nullptr;
 
   DataType type = kudu::UNKNOWN_DATA;

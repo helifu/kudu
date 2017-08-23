@@ -67,7 +67,7 @@ public:
 
   KuduValueBloomFilter* Build() const;
 
-  KuduValueBloomFilter* Build(const void* bf) const;
+  KuduValueBloomFilter* Build(void* bf) const;
 
 private:
   const KuduSchema* schema_;

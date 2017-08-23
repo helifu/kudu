@@ -71,7 +71,7 @@ KuduValueBloomFilter* KuduValueBloomFilterBuilder::Build() const {
   return data_->Build();
 }
 
-KuduValueBloomFilter* KuduValueBloomFilterBuilder::Build(const void* bf) const {
+KuduValueBloomFilter* KuduValueBloomFilterBuilder::Build(void* bf) const {
   return data_->Build(bf);
 }
 

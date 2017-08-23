@@ -102,10 +102,11 @@ public:
   ///   Attention: It's only used for impala specially now.
   /// @param [in] bf
   ///   The API will not owner the 'bf' object inside.
+  ///   Attention: The bf would be modified when inserting the new KuduValue.
   /// @Return a KuduValueBloomFilter object.
   ///   The caller owns the result until it is passed into
   ///   KuduScanner::AddConjunctPredicate().
-  KuduValueBloomFilter* Build(const void* bf) const;
+  KuduValueBloomFilter* Build(void* bf) const;
 
 private:
   class KUDU_NO_EXPORT Data;
