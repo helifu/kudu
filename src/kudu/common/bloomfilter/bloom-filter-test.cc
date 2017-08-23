@@ -28,7 +28,7 @@ using namespace std;
 
 namespace {
 
-using namespace impala;
+using namespace impala_kudu;
 
 class TestImpalaBloomFilter: public KuduTest {};
 
@@ -270,19 +270,17 @@ TEST(TestImpalaBloomFilter, protobuf) {
   kudu::BloomFilterPB pb;
   BloomFilter::ToPB(&bf, &pb);
 
-  // New a impala::BloomFilter object.
+  // New a impala_kudu::BloomFilter object.
   Arena arena(1024, 1024*1024);
   uint8_t* buffer = static_cast<uint8_t*>(arena.AllocateBytesAligned(pb.directory().size(), 16/*64*/));
   memcpy(buffer, pb.directory().data(), pb.directory().size());
-  BloomFilter* from_thrift = arena.NewObject<impala::BloomFilter>(pb.log_heap_space(), buffer);
+  BloomFilter* from_thrift = arena.NewObject<impala_kudu::BloomFilter>(pb.log_heap_space(), buffer);
 
   for (int i = 0; i < 10; ++i) ASSERT_TRUE(BfFind(*from_thrift, i));
   for (int missing: missing_ints) ASSERT_FALSE(BfFind(*from_thrift, missing));
 }
 
 TEST(TestImpalaBloomFilter, BloomFilterOr) {
-  CpuInfo::Init();
-
   BloomFilter bf1(BloomFilter::MinLogSpace(100, 0.01));
   BloomFilter bf2(BloomFilter::MinLogSpace(100, 0.01));
 

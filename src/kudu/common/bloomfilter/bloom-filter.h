@@ -31,7 +31,7 @@
 #include "kudu/gutil/macros.h"
 
 using namespace kudu;
-namespace impala {
+namespace impala_kudu {
 
 /// A BloomFilter stores sets of items and offers a query operation indicating whether or
 /// not that item is in the set.  BloomFilters use much less space than other compact data
@@ -195,6 +195,6 @@ inline bool ALWAYS_INLINE BloomFilter::Find(const uint32_t hash) const noexcept 
   }
 }
 
-}  // namespace impala
+}  // namespace impala_kudu
 
 #endif  // IMPALA_UTIL_BLOOM_H

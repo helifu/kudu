@@ -20,11 +20,10 @@
 #define IMPALA_UTIL_HASH_UTIL_H
 
 #include "kudu/common/bloomfilter/compiler-util.h"
-
 #include "kudu/common/bloomfilter/cpu-info.h"
 #include "kudu/common/bloomfilter/sse-util.h"
 
-namespace impala {
+namespace impala_kudu {
 
 /// Utility class to compute hash values.
 class HashUtil {

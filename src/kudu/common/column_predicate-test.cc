@@ -545,20 +545,20 @@ class TestColumnPredicate : public KuduTest {
 
     void* directory = arena.AllocateBytesAligned(1uLL<<log_heap_space, 16);
     ASSERT_NE(nullptr, directory);
-    impala::BloomFilter* bf = arena.NewObject<impala::BloomFilter>(log_heap_space, (uint8_t*)directory);
+    impala_kudu::BloomFilter* bf = arena.NewObject<impala_kudu::BloomFilter>(log_heap_space, (uint8_t*)directory);
     ASSERT_NE(nullptr, bf);
     top_list = { &values[2], &values[3], &values[4] };
     for (int i = 0; i < top_list.size(); ++i) {
       switch (column.type_info()->type()) {
         case INT8:
-          bf->Insert(impala::GetHashValue<INT8>(top_list[i]));
+          bf->Insert(impala_kudu::GetHashValue<INT8>(top_list[i]));
           break;
         case INT32:
-          bf->Insert(impala::GetHashValue<INT32>(top_list[i]));
+          bf->Insert(impala_kudu::GetHashValue<INT32>(top_list[i]));
           break;
         case STRING:
         case BINARY:
-          bf->Insert(impala::GetHashValue<STRING>(top_list[i]));
+          bf->Insert(impala_kudu::GetHashValue<STRING>(top_list[i]));
           break;
         default:
           ASSERT_TRUE(false);
@@ -1437,7 +1437,7 @@ TEST_F(TestColumnPredicate, TestRedaction) {
 }
 
 TEST_F(TestColumnPredicate, TestBloomFilterConstructor) {
-  impala::BloomFilter bf(1024);
+  impala_kudu::BloomFilter bf(1024);
   {
     ColumnSchema column("c", INT32);
     int32_t zero = 0;

@@ -53,7 +53,7 @@
 #define RESTRICT __restrict__
 #endif
 
-namespace impala {
+namespace impala_kudu {
 
 /// The size of an L1 cache line in bytes on x86-64.
 constexpr int CACHE_LINE_SIZE = 64;

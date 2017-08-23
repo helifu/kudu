@@ -27,7 +27,7 @@
 #include <smmintrin.h>
 #endif
 
-namespace impala {
+namespace impala_kudu {
 
 /// This class contains constants useful for text processing with SSE4.2 intrinsics.
 namespace SSEUtil {

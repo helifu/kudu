@@ -406,12 +406,12 @@ Status CopyPredicateBoundFromPB(const ColumnSchema& schema,
 Status CopyPredicateBloomFilterFromPB(const ColumnSchema& schema,
                                       const kudu::BloomFilterPB& pb_value,
                                       Arena* arena,
-                                      impala::BloomFilter** result) {
+                                      impala_kudu::BloomFilter** result) {
   // Copy the data from the protobuf into the Arena.
   uint8_t* directory = static_cast<uint8_t*>(arena->AllocateBytesAligned(pb_value.directory().size(), 16/*64*/));
   memcpy(directory, pb_value.directory().data(), pb_value.directory().size());
-  // New a impala::BloomFilter object.
-  *result = arena->NewObject<impala::BloomFilter>(pb_value.log_heap_space(), directory);
+  // New a impala_kudu::BloomFilter object.
+  *result = arena->NewObject<impala_kudu::BloomFilter>(pb_value.log_heap_space(), directory);
   return Status::OK();
 }
 } // anonymous namespace
@@ -467,7 +467,7 @@ void ColumnPredicateToPB(const ColumnPredicate& predicate,
                                predicate.raw_upper(),
                                pred->mutable_upper());
       }
-      impala::BloomFilter::ToPB(predicate.bloom_filter(), 
+      impala_kudu::BloomFilter::ToPB(predicate.bloom_filter(), 
                                 pred->mutable_bloomfilter());
       return;
     }
@@ -544,7 +544,7 @@ Status ColumnPredicateFromPB(const Schema& schema,
       const auto& pb_bf = pb.bloom_filter();
       const void* lower = nullptr;
       const void* upper = nullptr;
-      impala::BloomFilter* bf = nullptr;
+      impala_kudu::BloomFilter* bf = nullptr;
       if (pb_bf.has_lower()) {
         RETURN_NOT_OK(CopyPredicateBoundFromPB(col, pb_bf.lower(), arena, &lower));
       }

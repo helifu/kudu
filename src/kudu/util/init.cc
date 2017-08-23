@@ -74,7 +74,6 @@ Status CheckCPUFlags() {
     return BadCPUStatus(cpu, "SSSE3");
   }
 
-  impala::CpuInfo::Init();
   return Status::OK();
 }
 

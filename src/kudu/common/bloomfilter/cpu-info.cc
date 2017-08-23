@@ -63,7 +63,7 @@ void WarnIfFileNotEqual(
 }
 } // end anonymous namespace
 
-namespace impala {
+namespace impala_kudu {
 
 bool CpuInfo::initialized_ = false;
 int64_t CpuInfo::hardware_flags_ = 0;
@@ -76,6 +76,7 @@ int CpuInfo::max_num_numa_nodes_;
 unique_ptr<int[]> CpuInfo::core_to_numa_node_;
 vector<vector<int>> CpuInfo::numa_node_to_cores_;
 vector<int> CpuInfo::numa_node_core_idx_;
+CpuInfo* CpuInfo::cpuinfo_ = new CpuInfo();
 
 static struct {
   string name;
@@ -103,6 +104,10 @@ int64_t ParseCPUFlags(const string& values) {
     }
   }
   return flags;
+}
+
+CpuInfo::CpuInfo() {
+  Init();
 }
 
 void CpuInfo::Init() {

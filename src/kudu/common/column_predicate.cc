@@ -55,7 +55,7 @@ ColumnPredicate::ColumnPredicate(PredicateType predicate_type,
                                  ColumnSchema column,
                                  const void* lower,
                                  const void* upper,
-                                 impala::BloomFilter* value)
+                                 impala_kudu::BloomFilter* value)
     : predicate_type_(predicate_type),
       column_(move(column)),
       lower_(lower),
@@ -168,7 +168,7 @@ ColumnPredicate ColumnPredicate::None(ColumnSchema column) {
 ColumnPredicate ColumnPredicate::BloomFilter(ColumnSchema column, 
                                              const void* lower, 
                                              const void* upper, 
-                                             impala::BloomFilter* value) {
+                                             impala_kudu::BloomFilter* value) {
   CHECK(value != nullptr);
   ColumnPredicate pred(PredicateType::BloomFilter, move(column), lower, upper, value);
   pred.Simplify();
@@ -766,7 +766,7 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
         });
       }
       ApplyPredicate(block, sel, [this] (const void* cell) {
-        return bf_->Find(impala::GetHashValue<PhysicalType>(cell));
+        return bf_->Find(impala_kudu::GetHashValue<PhysicalType>(cell));
       });
       return;
     }
@@ -918,24 +918,24 @@ bool ColumnPredicate::CheckValueInBloomFilter(const void* value) const {
   CHECK(predicate_type_ == PredicateType::BloomFilter);
   switch (column_.type_info()->type()) {
     case BOOL:
-      return bf_->Find(impala::GetHashValue<BOOL>(value));
+      return bf_->Find(impala_kudu::GetHashValue<BOOL>(value));
     case INT8:
-      return bf_->Find(impala::GetHashValue<INT8>(value));
+      return bf_->Find(impala_kudu::GetHashValue<INT8>(value));
     case INT16:
-      return bf_->Find(impala::GetHashValue<INT16>(value));
+      return bf_->Find(impala_kudu::GetHashValue<INT16>(value));
     case INT32:
-      return bf_->Find(impala::GetHashValue<INT32>(value));
+      return bf_->Find(impala_kudu::GetHashValue<INT32>(value));
     case INT64:
-        return bf_->Find(impala::GetHashValue<INT64>(value));
+        return bf_->Find(impala_kudu::GetHashValue<INT64>(value));
     case FLOAT:
-        return bf_->Find(impala::GetHashValue<FLOAT>(value));
+        return bf_->Find(impala_kudu::GetHashValue<FLOAT>(value));
     case DOUBLE:
-        return bf_->Find(impala::GetHashValue<DOUBLE>(value));
+        return bf_->Find(impala_kudu::GetHashValue<DOUBLE>(value));
     case BINARY:
     case STRING:
-        return bf_->Find(impala::GetHashValue<STRING>(value));
+        return bf_->Find(impala_kudu::GetHashValue<STRING>(value));
     case UNIXTIME_MICROS:
-        return bf_->Find(impala::GetHashValue<UNIXTIME_MICROS>(value));
+        return bf_->Find(impala_kudu::GetHashValue<UNIXTIME_MICROS>(value));
     case UINT8:
     case UINT16:
     case UINT32:

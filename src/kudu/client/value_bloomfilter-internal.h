@@ -41,14 +41,14 @@ public:
 
   bool Find(const KuduValue* value) const;
 
-  impala::BloomFilter* GetBloomFilter() const;
+  impala_kudu::BloomFilter* GetBloomFilter() const;
 
-  void SetBloomFilter(impala::BloomFilter* bf);
+  void SetBloomFilter(impala_kudu::BloomFilter* bf);
 
 private:
   std::string col_name_;
   DataType type_;
-  impala::BloomFilter* bf_;
+  impala_kudu::BloomFilter* bf_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

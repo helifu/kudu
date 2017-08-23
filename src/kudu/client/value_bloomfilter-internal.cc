@@ -31,7 +31,7 @@ KuduValueBloomFilter::Data::Data(const std::string& col_name,
                                  const int log_heap_space)
   : col_name_(col_name)
   , type_(type)
-  , bf_(new impala::BloomFilter(log_heap_space)) {
+  , bf_(new impala_kudu::BloomFilter(log_heap_space)) {
 }
 
 KuduValueBloomFilter::Data::Data(const std::string& col_name,
@@ -62,48 +62,48 @@ void KuduValueBloomFilter::Data::Insert(const KuduValue* value) {
   case kudu::INT8:
     {
       int8_t v = *reinterpret_cast<const int64_t*>(val_void);
-      bf_->Insert(impala::GetHashValue<INT8>(&v));
+      bf_->Insert(impala_kudu::GetHashValue<INT8>(&v));
       break;
     }
   case kudu::INT16:
     {
       int16_t v = *reinterpret_cast<const int64_t*>(val_void);
-      bf_->Insert(impala::GetHashValue<INT16>(&v));
+      bf_->Insert(impala_kudu::GetHashValue<INT16>(&v));
       break;
     }
   case kudu::INT32:
     {
       int32_t v = *reinterpret_cast<const int64_t*>(val_void);
-      bf_->Insert(impala::GetHashValue<INT32>(&v));
+      bf_->Insert(impala_kudu::GetHashValue<INT32>(&v));
       break;
     }
   case kudu::INT64:
     {
       int64_t v = *reinterpret_cast<const int64_t*>(val_void);
-      bf_->Insert(impala::GetHashValue<INT64>(&v));
+      bf_->Insert(impala_kudu::GetHashValue<INT64>(&v));
       break;
     }
   case kudu::BOOL:
     {
       bool v = *reinterpret_cast<const int64_t*>(val_void) ? true : false;
-      bf_->Insert(impala::GetHashValue<BOOL>(&v));
+      bf_->Insert(impala_kudu::GetHashValue<BOOL>(&v));
       break;
     }
   case kudu::FLOAT:
     {
       float v = *reinterpret_cast<const float*>(val_void);
-      bf_->Insert(impala::GetHashValue<FLOAT>(&v));
+      bf_->Insert(impala_kudu::GetHashValue<FLOAT>(&v));
       break;
     }
   case kudu::DOUBLE:
     {
       double v = *reinterpret_cast<const double*>(val_void);
-      bf_->Insert(impala::GetHashValue<DOUBLE>(&v));
+      bf_->Insert(impala_kudu::GetHashValue<DOUBLE>(&v));
       break;
     }
   case kudu::BINARY:// physicaltype: STRING -> BINARY
     {
-      bf_->Insert(impala::GetHashValue<STRING>(val_void));
+      bf_->Insert(impala_kudu::GetHashValue<STRING>(val_void));
       break;
     }
   default:
@@ -124,41 +124,41 @@ bool KuduValueBloomFilter::Data::Find(const KuduValue* value) const {
   case kudu::INT8:
     {
       int8_t v = *reinterpret_cast<const int64_t*>(val_void);
-      return bf_->Find(impala::GetHashValue<INT8>(&v));
+      return bf_->Find(impala_kudu::GetHashValue<INT8>(&v));
     }
   case kudu::INT16:
     {
       int16_t v = *reinterpret_cast<const int64_t*>(val_void);
-      return bf_->Find(impala::GetHashValue<INT16>(&v));
+      return bf_->Find(impala_kudu::GetHashValue<INT16>(&v));
     }
   case kudu::INT32:
     {
       int32_t v = *reinterpret_cast<const int64_t*>(val_void);
-      return bf_->Find(impala::GetHashValue<INT32>(&v));
+      return bf_->Find(impala_kudu::GetHashValue<INT32>(&v));
     }
   case kudu::INT64:
     {
       int64_t v = *reinterpret_cast<const int64_t*>(val_void);
-      return bf_->Find(impala::GetHashValue<INT64>(&v));
+      return bf_->Find(impala_kudu::GetHashValue<INT64>(&v));
     }
   case kudu::BOOL:
     {
       bool v = *reinterpret_cast<const int64_t*>(val_void) ? true : false;
-      return bf_->Find(impala::GetHashValue<BOOL>(&v));
+      return bf_->Find(impala_kudu::GetHashValue<BOOL>(&v));
     }
   case kudu::FLOAT:
     {
       float v = *reinterpret_cast<const float*>(val_void);
-      return bf_->Find(impala::GetHashValue<FLOAT>(&v));
+      return bf_->Find(impala_kudu::GetHashValue<FLOAT>(&v));
     }
   case kudu::DOUBLE:
     {
       double v = *reinterpret_cast<const double*>(val_void);
-      return bf_->Find(impala::GetHashValue<DOUBLE>(&v));
+      return bf_->Find(impala_kudu::GetHashValue<DOUBLE>(&v));
     }
   case kudu::BINARY:
     {
-      return bf_->Find(impala::GetHashValue<STRING>(val_void));
+      return bf_->Find(impala_kudu::GetHashValue<STRING>(val_void));
     }
   default:
     {
@@ -169,11 +169,11 @@ bool KuduValueBloomFilter::Data::Find(const KuduValue* value) const {
   return false;
 }
 
-impala::BloomFilter* KuduValueBloomFilter::Data::GetBloomFilter() const {
+impala_kudu::BloomFilter* KuduValueBloomFilter::Data::GetBloomFilter() const {
   return bf_;
 }
 
-void KuduValueBloomFilter::Data::SetBloomFilter(impala::BloomFilter* bf) {
+void KuduValueBloomFilter::Data::SetBloomFilter(impala_kudu::BloomFilter* bf) {
   bf_ = bf;
   return;
 }
@@ -198,7 +198,7 @@ void KuduValueBloomFilterBuilder::Data::SetColumnName(const std::string& col_nam
 }
 
 void KuduValueBloomFilterBuilder::Data::SetLogSpace(const size_t ndv, const double fpp) {
-  log_heap_space_ = impala::BloomFilter::MinLogSpace(ndv, fpp);
+  log_heap_space_ = impala_kudu::BloomFilter::MinLogSpace(ndv, fpp);
   return;
 }
 
@@ -237,7 +237,7 @@ KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build(const void* bf) c
 
   KuduValueBloomFilter* one = new KuduValueBloomFilter();
   one->data_ = new KuduValueBloomFilter::Data(col_name_, type);
-  one->data_->SetBloomFilter((reinterpret_cast<const impala::BloomFilter*>(bf))->Clone());
+  one->data_->SetBloomFilter((reinterpret_cast<const impala_kudu::BloomFilter*>(bf))->Clone());
   return one;
 }
 

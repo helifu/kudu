@@ -141,7 +141,7 @@ class ColumnPredicate {
   static ColumnPredicate BloomFilter(ColumnSchema column,
                                      const void* lower,
                                      const void* upper,
-                                     impala::BloomFilter* value);
+                                     impala_kudu::BloomFilter* value);
 
   // Returns the type of this predicate.
   PredicateType predicate_type() const {
@@ -215,7 +215,7 @@ class ColumnPredicate {
             (DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) >= 0)) {
           return false;
         }
-        return bf_->Find(impala::GetHashValue<PhysicalType>(cell));
+        return bf_->Find(impala_kudu::GetHashValue<PhysicalType>(cell));
       }
     }
     LOG(FATAL) << "unknown predicate type";
@@ -256,8 +256,7 @@ class ColumnPredicate {
   }
 
   // Returns the bloom filter if this is a bloom filter predicate.
-  const impala::BloomFilter* bloom_filter() const {
-    //return bf_.get();
+  const impala_kudu::BloomFilter* bloom_filter() const {
     return bf_;
   }
 
@@ -281,7 +280,7 @@ class ColumnPredicate {
                   ColumnSchema column,
                   const void* lower,
                   const void* upper,
-                  impala::BloomFilter* value);
+                  impala_kudu::BloomFilter* value);
 
   // Transition to a None predicate type.
   void SetToNone();
@@ -342,7 +341,7 @@ class ColumnPredicate {
   std::vector<const void*> values_;
 
   // The bloom filter to check if the column value is in it.
-  impala::BloomFilter* bf_;
+  impala_kudu::BloomFilter* bf_;
 };
 
 // Compares predicates according to selectivity. Predicates that match fewer

@@ -19,8 +19,6 @@
 #ifndef IMPALA_RUNTIME_RAW_VALUE_INLINE_H
 #define IMPALA_RUNTIME_RAW_VALUE_INLINE_H
 
-//#include "runtime/raw-value.h"
-
 #include <cmath>
 
 #include <boost/date_time/compiler_config.hpp>
@@ -40,7 +38,7 @@ using boost::posix_time::ptime_from_tm;
 using boost::posix_time::time_duration;
 using boost::posix_time::to_tm;
 
-namespace impala {
+namespace impala_kudu {
 
 /// Arbitrary constants used to compute hash values for special cases. Constants were
 /// obtained by taking lower bytes of generated UUID. NULL and empty strings should

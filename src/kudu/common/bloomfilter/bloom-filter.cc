@@ -25,7 +25,7 @@
 
 using namespace std;
 
-namespace impala {
+namespace impala_kudu {
 
 constexpr uint32_t BloomFilter::REHASH[8] __attribute__((aligned(32)));
 
@@ -233,16 +233,7 @@ bool BloomFilter::operator==(const BloomFilter& rhs) const {
   if (this->log_num_buckets_ != rhs.log_num_buckets_) {
     return false;
   }
-  /*printf("\n ==this: \n");
-  for (int i = 0; i < directory_size(); ++i) {
-    printf("%d ", *((char*)(this->directory_)+i));
-  }
-  printf("\n ==rhs: \n");
-  for (int i = 0; i < directory_size(); ++i) {
-    printf("%d ", *((char*)(  rhs.directory_)+i));
-  }
-  printf("\n");*/
   return (0 == memcmp(this->directory_, rhs.directory_, directory_size())) ? true : false;
 }
 
-} // namespace impala
+} // namespace impala_kudu

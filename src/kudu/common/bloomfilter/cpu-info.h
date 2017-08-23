@@ -26,7 +26,7 @@
 
 #include <glog/logging.h>
 
-namespace impala {
+namespace impala_kudu {
 
 /// CpuInfo is an interface to query for cpu information at runtime.  The caller can
 /// ask for the sizes of the caches and what hardware features are supported.
@@ -49,8 +49,8 @@ class CpuInfo {
   };
   static const int NUM_CACHE_LEVELS = L3_CACHE + 1;
 
-  /// Initialize CpuInfo.
-  static void Init();
+  /// Construct
+  CpuInfo();
 
   /// Determine if the CPU meets the minimum CPU requirements and if not, log an error.
   static void VerifyCpuRequirements();
@@ -182,16 +182,19 @@ class CpuInfo {
   /// Setup fake NUMA info to simulate NUMA for backend tests. Sets up CpuInfo to
   /// simulate 'max_num_numa_nodes' with 'core_to_numa_node' specifying the NUMA node
   /// of each core in [0, GetMaxNumCores()).
-  static void InitFakeNumaForTest(
+  void InitFakeNumaForTest(
       int max_num_numa_nodes, const std::vector<int>& core_to_numa_node);
 
  private:
+  /// Initialize CpuInfo.
+  void Init();
+
   /// Initialize NUMA-related state - called from Init();
-  static void InitNuma();
+  void InitNuma();
 
   /// Initialize 'numa_node_to_cores_' based on 'max_num_numa_nodes_' and
   /// 'core_to_numa_node_'. Called from InitNuma();
-  static void InitNumaNodeToCores();
+  void InitNumaNodeToCores();
 
   /// Populates the arguments with information about this machine's caches.
   /// The values returned are not reliable in some environments, e.g. RHEL5 on EC2, so
@@ -220,6 +223,9 @@ class CpuInfo {
   /// Array with 'max_num_cores_' entries, each of which is the index of that core in its
   /// NUMA node.
   static std::vector<int> numa_node_core_idx_;
+
+  static CpuInfo* cpuinfo_;
 };
+
 }
 #endif
