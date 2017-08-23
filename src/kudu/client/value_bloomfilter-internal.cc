@@ -241,7 +241,7 @@ KuduValueBloomFilter* KuduValueBloomFilterBuilder::Data::Build(const void* bf) c
   KuduValueBloomFilter* one = new KuduValueBloomFilter();
   one->data_ = new KuduValueBloomFilter::Data(col_name_, type);
   /* we won't clone the input bf, so it's a bit of danger!! */
-  one->data_->SetBloomFilter(reinterpret_cast<impala_kudu::BloomFilter*>bf);
+  one->data_->SetBloomFilter(reinterpret_cast<impala_kudu::BloomFilter*>(bf));
   return one;
 }
 
