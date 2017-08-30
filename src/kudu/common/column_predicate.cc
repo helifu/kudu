@@ -663,7 +663,7 @@ void ColumnPredicate::MergeIntoBloomFilter(const ColumnPredicate& other) {
       return;
     };
     case PredicateType::BloomFilter: {
-      LOG(FATAL) << "bloomfilter doesn't merge with bloomfilter yet.";
+      impala_kudu::BloomFilter::Or(other.bf_, this->bf_);
       return;
     }
   }
