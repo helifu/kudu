@@ -162,7 +162,7 @@ class HashUtil {
   static const uint64_t FNV64_PRIME = 1099511628211UL;
   static const uint64_t FNV64_SEED = 14695981039346656037UL;
 
-  static const base::CPU cpu_;
+  static base::CPU cpu_;
 
   /// Implementation of the Fowler-Noll-Vo hash function. This is not as performant
   /// as boost's hash on int types (2x slower) but has bit entropy.

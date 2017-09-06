@@ -286,4 +286,17 @@ CPU::IntelMicroArchitecture CPU::GetIntelMicroArchitecture() const {
   return PENTIUM;
 }
 
+void CPU::EnableFeature(IntelMicroArchitecture flag, bool enable) {
+  switch (flag)
+  {
+  case AVX:
+    has_avx_ = enable;
+    break;
+  case AVX2:
+    has_avx2_ = enable;
+    break;
+  default:
+    return; // unsupported architecture.
+  }
+}
 }  // namespace base

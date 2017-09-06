@@ -157,14 +157,29 @@ OrEqualArrayAvx(size_t n, const char* __restrict__ in, char* __restrict__ out) {
         _mm256_or_pd(_mm256_loadu_pd(double_out), _mm256_loadu_pd(double_in)));
   }
 }
+
+// Computes out[i] &= in[i] for the arrays 'in' and 'out' of length 'n' using AVX
+// instructions. 'n' must be a multiple of 32.
+void __attribute__((target("avx")))
+AndEqualArrayAvx(size_t n, const char* __restrict__ in, char* __restrict__ out) {
+  constexpr size_t AVX_REGISTER_BYTES = sizeof(__m256d);
+  DCHECK_EQ(n % AVX_REGISTER_BYTES, 0) << "Invalid Bloom Filter directory size";
+  const char* const in_end = in + n;
+  for (; in != in_end; (in += AVX_REGISTER_BYTES), (out += AVX_REGISTER_BYTES)) {
+    const double* double_in = reinterpret_cast<const double*>(in);
+    double* double_out = reinterpret_cast<double*>(out);
+    _mm256_storeu_pd(double_out,
+        _mm256_and_pd(_mm256_loadu_pd(double_out), _mm256_loadu_pd(double_in)));
+  }
+}
 } //namespace
 
 void BloomFilter::Or(const BloomFilter* in, BloomFilter* out) {
   DCHECK(out != NULL);
   DCHECK_EQ(in->log_num_buckets_, out->log_num_buckets_);
-  if (*in == *out) return;
+  if (in == out) return;
   DCHECK_EQ(in->directory_size(), out->directory_size())
-            << "Equal log heap space " << (in->log_num_buckets_ + LOG_BUCKET_BYTE_SIZE)
+            << "(Or) Equal log heap space " << (in->log_num_buckets_ + LOG_BUCKET_BYTE_SIZE)
             << ", but different directory sizes: " << in->directory_size()
             << ", " << out->directory_size();
   // The trivial loop out[i] |= in[i] should auto-vectorize with gcc at -O3, but it is not
@@ -189,6 +204,32 @@ void BloomFilter::Or(const BloomFilter* in, BloomFilter* out) {
       for (int i = 0; i < 2; ++i, ++simd_in, ++simd_out) {
         _mm_storeu_si128(
             simd_out, _mm_or_si128(_mm_loadu_si128(simd_out), _mm_loadu_si128(simd_in)));
+      }
+    }
+  }
+}
+
+void BloomFilter::And(const BloomFilter* in, BloomFilter* out) {
+  DCHECK(out != NULL);
+  DCHECK_EQ(in->log_num_buckets_, out->log_num_buckets_);
+  if (in == out) return;
+  DCHECK_EQ(in->directory_size(), out->directory_size())
+            << "(And) Equal log heap space " << (in->log_num_buckets_ + LOG_BUCKET_BYTE_SIZE)
+            << ", but different directory sizes: " << in->directory_size()
+            << ", " << out->directory_size();
+  if (HashUtil::cpu_.has_avx()) {
+    AndEqualArrayAvx(in->directory_size(), 
+                     reinterpret_cast<const char*>(in->directory_),
+                     reinterpret_cast<char*>(out->directory_));
+  } else {
+    const __m128i* simd_in = reinterpret_cast<const __m128i*>(in->directory_);
+    const __m128i* const simd_in_end =
+        reinterpret_cast<const __m128i*>(in->directory_ + in->directory_size());
+    __m128i* simd_out = reinterpret_cast<__m128i*>(out->directory_);
+    while (simd_in != simd_in_end) {
+      for (int i = 0; i < 2; ++i, ++simd_in, ++simd_out) {
+        _mm_storeu_si128(
+            simd_out, _mm_and_si128(_mm_loadu_si128(simd_out), _mm_loadu_si128(simd_in)));
       }
     }
   }

@@ -82,6 +82,9 @@ class BloomFilter {
   /// Computes the logical OR of 'in' with 'out' and stores the result in 'out'.
   static void Or(const BloomFilter* in, BloomFilter* out);
 
+  /// Computes the logical AND of 'in' with 'out' and stores the result in 'out'.
+  static void And(const BloomFilter* in, BloomFilter* out);
+
   /// As more distinct items are inserted into a BloomFilter, the false positive rate
   /// rises. MaxNdv() returns the NDV (number of distinct values) at which a BloomFilter
   /// constructed with (1 << log_heap_space) bytes of heap space hits false positive

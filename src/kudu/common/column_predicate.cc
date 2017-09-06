@@ -663,7 +663,7 @@ void ColumnPredicate::MergeIntoBloomFilter(const ColumnPredicate& other) {
       return;
     };
     case PredicateType::BloomFilter: {
-      impala_kudu::BloomFilter::Or(other.bf_, this->bf_);
+      impala_kudu::BloomFilter::And(other.bf_, this->bf);
       return;
     }
   }
