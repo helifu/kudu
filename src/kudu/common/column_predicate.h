@@ -219,6 +219,7 @@ class ColumnPredicate {
       }
     }
     LOG(FATAL) << "unknown predicate type";
+    return false;
   }
 
   // Evaluate the predicate on a single cell. Used if the physical type is only known at run-time.

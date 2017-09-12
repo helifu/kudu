@@ -651,6 +651,8 @@ class Tablet::Iterator : public RowwiseIterator {
 
   virtual Status Init(ScanSpec *spec) OVERRIDE;
 
+  virtual Status Merge(ScanSpec *spec) OVERRIDE;
+
   virtual bool HasNext() const OVERRIDE;
 
   virtual Status NextBlock(RowBlock *dst) OVERRIDE;

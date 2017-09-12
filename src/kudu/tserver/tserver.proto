@@ -279,6 +279,15 @@ message NewScanRequestPB {
   optional uint64 row_format_flags = 14 [default = 0];
 }
 
+// Continuing an existing scan.
+message ContinueScanRequestPB {
+  // Scanner ID returned from a previous request.
+  required bytes scanner_id = 1;
+
+  // Column predicates to enforce.
+  repeated ColumnPredicatePB column_predicates = 2;
+}
+
 // A scan request. Initially, it should specify a scan. Later on, you
 // can use the scanner id returned to fetch result batches with a different
 // scan request.
@@ -297,10 +306,10 @@ message NewScanRequestPB {
 //
 // This is modeled somewhat after HBase's scanner API.
 message ScanRequestPB {
-  // If continuing an existing scan, then you must set scanner_id.
+  // If continuing an existing scan, then you must set 'continue_scan_request'.
   // Otherwise, you must set 'new_scan_request'.
-  optional bytes scanner_id = 1;
-  optional NewScanRequestPB new_scan_request = 2;
+  optional NewScanRequestPB new_scan_request = 1;
+  optional ContinueScanRequestPB continue_scan_request = 2;
 
   // The sequence ID of this call. The sequence ID should start at 0
   // with the request for a new scanner, and after each successful request,

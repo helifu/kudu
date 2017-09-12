@@ -49,6 +49,8 @@ class MergeIterator : public RowwiseIterator {
   // The passed-in iterators should be already initialized.
   Status Init(ScanSpec *spec) OVERRIDE;
 
+  virtual Status Merge(ScanSpec *spec) OVERRIDE;
+
   virtual bool HasNext() const OVERRIDE;
 
   virtual string ToString() const OVERRIDE;
@@ -63,6 +65,7 @@ class MergeIterator : public RowwiseIterator {
   void PrepareBatch(RowBlock* dst);
   Status MaterializeBlock(RowBlock* dst);
   Status InitSubIterators(ScanSpec *spec);
+  Status MergeSubIterators(ScanSpec* spec);
 
   const Schema schema_;
 
@@ -108,6 +111,8 @@ class UnionIterator : public RowwiseIterator {
 
   Status Init(ScanSpec *spec) OVERRIDE;
 
+  virtual Status Merge(ScanSpec *spec) OVERRIDE;
+
   bool HasNext() const OVERRIDE;
 
   string ToString() const OVERRIDE;
@@ -127,6 +132,7 @@ class UnionIterator : public RowwiseIterator {
   Status MaterializeBlock(RowBlock* dst);
   void FinishBatch();
   Status InitSubIterators(ScanSpec *spec);
+  Status MergeSubIterators(ScanSpec* spec);
 
   // Pop the front iterator from iters_ and accumulate its statistics into
   // finished_iter_stats_by_col_.
@@ -170,6 +176,8 @@ class MaterializingIterator : public RowwiseIterator {
 
   // Initialize the iterator, performing predicate pushdown as described above.
   Status Init(ScanSpec *spec) OVERRIDE;
+
+  virtual Status Merge(ScanSpec *spec) OVERRIDE;
 
   bool HasNext() const OVERRIDE;
 
@@ -219,9 +227,19 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
   static Status InitAndMaybeWrap(std::shared_ptr<RowwiseIterator> *base_iter,
                                  ScanSpec *spec);
 
+  // Merge the given '*base_iter' with the given 'spec'.
+  //
+  // If the base_iter accepts all predicates, then simply returns.
+  // Otherwise, swaps out *base_iter for a PredicateEvaluatingIterator which wraps
+  // the original iterator and accepts all predicates on its behalf.
+  static Status MergeAndMaybeWrap(std::shared_ptr<RowwiseIterator>* base_iter,
+                                  ScanSpec* spec);
+
   // Initialize the iterator.
   // POSTCONDITION: spec->predicates().empty()
   Status Init(ScanSpec *spec) OVERRIDE;
+
+  virtual Status Merge(ScanSpec *spec) OVERRIDE;
 
   virtual Status NextBlock(RowBlock *dst) OVERRIDE;
 
@@ -247,8 +265,8 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
 
   std::shared_ptr<RowwiseIterator> base_iter_;
 
-  // List of (column index, predicate) in order of most to least selective.
-  std::vector<ColumnPredicate> col_idx_predicates_;
+  // List of predicates in order of most to least selective.
+  std::vector<ColumnPredicate> col_predicates_;
 };
 
 } // namespace kudu

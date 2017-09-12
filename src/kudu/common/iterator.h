@@ -64,6 +64,19 @@ class IteratorBase {
 
 class RowwiseIterator : public virtual IteratorBase {
  public:
+  // Merge the new predicates to the existing row wise iterator.
+  //
+  // The scan spec may be transformed by this call to remove predicates
+  // which will be fully pushed down into the iterator.
+  //
+  // The scan spec pointer must remain valid for the lifetime of the
+  // iterator -- the iterator does not take ownership of the object.
+  //
+  // This may be NULL if there are no predicates, etc.
+  // TODO: passing NULL is just convenience for unit tests, etc.
+  // Should probably simplify the API by not allowing NULL.
+  virtual Status Merge(ScanSpec *spec) = 0;
+
   // Materialize all columns in the destination block.
   //
   // Any indirect data (eg strings) are copied into the destination block's
