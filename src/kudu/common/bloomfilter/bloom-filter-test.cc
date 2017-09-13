@@ -131,7 +131,7 @@ void BfIntersection(const BloomFilter* x, BloomFilter* y, bool* success) {
 }
 }  // namespace
 
-namespace impala {
+namespace impala_kudu {
 
 // We can construct (and destruct) Bloom filters with different spaces.
 TEST(TestImpalaBloomFilter, Constructor) {
@@ -368,4 +368,4 @@ TEST(TestImpalaBloomFilter, BloomFilterAnd) {
   ASSERT_FALSE(BfFind(bf2, 81));
 }
 
-}  // namespace impala
+}  // namespace impala_kudu
