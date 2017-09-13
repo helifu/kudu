@@ -174,7 +174,7 @@ class KuduScanner::Data {
   }
 
   ScanConfiguration configuration_;
-  bool predicate_update_;
+  bool predicate_feature_;
 
   bool open_;
   bool data_in_open_;

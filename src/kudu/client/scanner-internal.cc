@@ -54,7 +54,7 @@ using internal::RemoteTabletServer;
 
 KuduScanner::Data::Data(KuduTable* table)
   : configuration_(table),
-    predicate_update_(false),
+    predicate_feature_(false),
     open_(false),
     data_in_open_(false),
     short_circuit_(false),
@@ -271,7 +271,7 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
 
   controller_.Reset();
   controller_.set_deadline(rpc_deadline);
-  if (!configuration_.spec().predicates().empty()) {
+  if (predicate_feature_) {
     controller_.RequireServerFeature(TabletServerFeatures::COLUMN_PREDICATES);
   }
   if (configuration().row_format_flags() & KuduScanner::PAD_UNIXTIME_MICROS_TO_16_BYTES) {
@@ -338,10 +338,15 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
 
   // Set up the predicates.
   scan->clear_column_predicates();
-  for (const auto& col_pred : configuration_.spec().predicates()) {
-    ColumnPredicateToPB(col_pred.second, scan->add_column_predicates());
-  }
-  predicate_update_ = false;
+  if (!configuration_.spec().predicates().empty()) {
+    for (const auto& col_pred : configuration_.spec().predicates()) {
+      ColumnPredicateToPB(col_pred.second, scan->add_column_predicates());
+    }
+    // Remove all the predicates after setting up them in PB.
+    // Next, we will reuse this empty map to collect the new predicates.
+    configuration_.get_spec().RemovePredicates();
+    predicate_feature_ = true;
+  }  
 
   if (configuration_.spec().lower_bound_key()) {
     scan->mutable_start_primary_key()->assign(
@@ -519,11 +524,11 @@ void KuduScanner::Data::PrepareContinueRequest() {
 
   // Prepare predicates.
   pb->clear_column_predicates();
-  if (predicate_update_) {
+  if (!configuration_.spec().predicates().empty()) {
     for (const auto& col_pred : configuration_.spec().predicates()) {
       ColumnPredicateToPB(col_pred.second, pb->add_column_predicates());
     }
-    predicate_update_ = false;
+    configuration_.get_spec().RemovePredicates();
   }
 }
 

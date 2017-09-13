@@ -1238,7 +1238,6 @@ Status KuduScanner::AddConjunctPredicate(KuduPredicate* pred) {
     delete pred;
     return Status::IllegalState("Predicate must be set before Open()");
   }
-  data_->predicate_update_ = true;
   return data_->mutable_configuration()->AddConjunctPredicate(pred);
 }
 

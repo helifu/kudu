@@ -101,6 +101,10 @@ class ScanConfiguration {
     return spec_;
   }
 
+  ScanSpec& get_spec() {
+    return spec_;
+  }
+
   bool has_batch_size_bytes() const {
     return has_batch_size_bytes_;
   }
