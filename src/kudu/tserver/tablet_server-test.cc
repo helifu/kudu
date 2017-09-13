@@ -1659,7 +1659,7 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_NewScanAndScannerID) {
   SCOPED_TRACE(SecureDebugString(req));
   Status s = proxy_->Scan(req, &resp, &rpc);
   ASSERT_FALSE(s.ok());
-  ASSERT_STR_CONTAINS(s.ToString(), "Must not pass both a scanner_id and new_scan_request");
+  ASSERT_STR_CONTAINS(s.ToString(), "Must not pass both new_scan_request and continue_scan_request");
 }
 
 
