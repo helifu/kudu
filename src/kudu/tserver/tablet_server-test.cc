@@ -1636,7 +1636,7 @@ TEST_F(TabletServerTest, TestBadScannerID) {
   ScanResponsePB resp;
   RpcController rpc;
 
-  req.set_scanner_id("does-not-exist");
+  req.mutable_continue_scan_request()->set_scanner_id("does-not-exist");
 
   SCOPED_TRACE(SecureDebugString(req));
   ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
@@ -1655,7 +1655,7 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_NewScanAndScannerID) {
   NewScanRequestPB* scan = req.mutable_new_scan_request();
   scan->set_tablet_id(kTabletId);
   req.set_batch_size_bytes(0); // so it won't return data right away
-  req.set_scanner_id("x");
+  req.mutable_continue_scan_request()->set_scanner_id("x");
   SCOPED_TRACE(SecureDebugString(req));
   Status s = proxy_->Scan(req, &resp, &rpc);
   ASSERT_FALSE(s.ok());
@@ -1781,7 +1781,7 @@ TEST_F(TabletServerTest, TestScan_InvalidScanSeqId) {
     // Continue the scan with an invalid sequence ID
     req.Clear();
     rpc.Reset();
-    req.set_scanner_id(scanner_id);
+    req.mutable_continue_scan_request()->set_scanner_id(scanner_id);
     req.set_batch_size_bytes(0); // so it won't return data right away
     req.set_call_seq_id(42); // should be 1
 

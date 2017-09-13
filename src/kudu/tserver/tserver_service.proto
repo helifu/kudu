@@ -66,8 +66,8 @@ message ChecksumRequestPB {
 }
 
 message ContinueChecksumRequestPB {
-  // continue scan request.
-  required ContinueScanRequestPB continue_requst;
+  // Scanner ID returned from a previous request.
+  required bytes scanner_id = 1;
 
   // Checksum returned from a previous request.
   required uint64 previous_checksum = 2;

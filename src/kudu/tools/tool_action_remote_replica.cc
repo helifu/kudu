@@ -124,7 +124,7 @@ class ReplicaDumper {
       // The first response has a scanner ID. We use this for all subsequent
       // responses.
       if (resp.has_scanner_id()) {
-        req.set_scanner_id(resp.scanner_id());
+        req.mutable_continue_scan_request()->set_scanner_id(resp.scanner_id());
         req.clear_new_scan_request();
       }
       req.set_call_seq_id(req.call_seq_id() + 1);

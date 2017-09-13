@@ -1119,7 +1119,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
                              rpc::RpcContext* context) {
   TRACE_EVENT0("tserver", "TabletServiceImpl::Scan");
   // Validate the request: user must pass a new_scan_request or
-  // a scanner ID, but not both.
+  // a continue_scan_request, but not both.
   if (PREDICT_FALSE(req->has_new_scan_request() &&
                     req->has_continue_scan_request())) {
     context->RespondFailure(Status::InvalidArgument(
@@ -1271,8 +1271,8 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
   } else if (req->has_continue_request()) {
     const ContinueChecksumRequestPB& continue_req = req->continue_request();
     collector.set_agg_checksum(continue_req.previous_checksum());
-    scan_req.set_scanner_id(continue_req.scanner_id());
-    Status s = HandleContinueScanRequest(&scan_req, &collector, &has_more, &error_code);
+    scan_req.mutable_continue_scan_request()->set_scanner_id(continue_req.scanner_id());
+    Status s = HandleContinueScanRequest(true, &scan_req, continue_req.scanner_id(), &collector, &has_more, &error_code);
     if (PREDICT_FALSE(!s.ok())) {
       SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
       return;
