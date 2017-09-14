@@ -40,6 +40,7 @@
 #include "kudu/client/scanner-internal.h"
 #include "kudu/client/session-internal.h"
 #include "kudu/client/value.h"
+#include "kudu/client/value_bloomfilter.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.h"
@@ -462,6 +463,35 @@ class ClientTest : public KuduTest {
           if (!s.starts_with("hello 2") && !s.starts_with("hello 3")) {
             FAIL() << row.ToString();
           }
+          AssertRawDataMatches(
+              scanner.GetProjectionSchema(), batch, row, count++, 4 /* num projected cols */);
+        }
+      }
+    }
+  }
+
+  void DoTestScanWithStringPredicateInBloomFilterMode() {
+    KuduScanner scanner(client_table_.get());
+
+    KuduValueBloomFilter* bf = KuduValueBloomFilterBuilder()
+                                .SetKuduSchema(&schema_)
+                                .SetColumnName("string_val")
+                                .SetLogSpace(1000, 0.001)
+                                .Build();
+    for (int i = 990; i < 1090; ++i) {
+        bf->Insert(KuduValue::CopyString(Slice(StringPrintf("hello %d", i))));
+    }
+    ASSERT_OK(scanner.AddConjunctPredicate(client_table_->NewBloomFilterPredicate("string_val", bf)));
+
+    LOG_TIMING(INFO, "Scanning with string predicate in bloom filter mode") {
+      ASSERT_OK(scanner.Open());
+
+      ASSERT_TRUE(scanner.HasMoreRows());
+      KuduScanBatch batch;
+      while (scanner.HasMoreRows()) {
+        ASSERT_OK(scanner.NextBatch(&batch));
+        int count = 0;
+        for (const KuduScanBatch::RowPtr& row : batch) {
           AssertRawDataMatches(
               scanner.GetProjectionSchema(), batch, row, count++, 4 /* num projected cols */);
         }

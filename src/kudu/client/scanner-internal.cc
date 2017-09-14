@@ -54,7 +54,7 @@ using internal::RemoteTabletServer;
 
 KuduScanner::Data::Data(KuduTable* table)
   : configuration_(table),
-    predicate_feature_(false),
+    predicate_update_(false),
     open_(false),
     data_in_open_(false),
     short_circuit_(false),
@@ -271,7 +271,7 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
 
   controller_.Reset();
   controller_.set_deadline(rpc_deadline);
-  if (predicate_feature_) {
+  if (!configuration_.spec().predicates().empty()) {
     controller_.RequireServerFeature(TabletServerFeatures::COLUMN_PREDICATES);
   }
   if (configuration().row_format_flags() & KuduScanner::PAD_UNIXTIME_MICROS_TO_16_BYTES) {
@@ -338,15 +338,10 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
 
   // Set up the predicates.
   scan->clear_column_predicates();
-  if (!configuration_.spec().predicates().empty()) {
-    for (const auto& col_pred : configuration_.spec().predicates()) {
+  for (const auto& col_pred : configuration_.spec().predicates()) {
       ColumnPredicateToPB(col_pred.second, scan->add_column_predicates());
-    }
-    // Remove all the predicates after setting up them in PB.
-    // Next, we will reuse this empty map to collect the new predicates.
-    configuration_.get_spec().RemovePredicates();
-    predicate_feature_ = true;
-  }  
+  }
+  predicate_update_ = false;
 
   if (configuration_.spec().lower_bound_key()) {
     scan->mutable_start_primary_key()->assign(
@@ -523,12 +518,28 @@ void KuduScanner::Data::PrepareContinueRequest() {
   }
 
   // Prepare predicates.
+  // The function 'merge()' of predicate is idempotent, so we could
+  // resend the whole predicates to tserver if there are any updates.
+  // 
+  // KuduScanner::Open()           spec->predicates
+  //    |
+  //     -- OpenNextTablet0     ->  send predicates0.
+  //            |                                       <--  updates0
+  //             -- NextBatch0  ->  send predicates1: predicates0+updates0.
+  //            |                                       <--  updates1
+  //             -- NextBatch1  ->  send predicates2: predicates1+updates1.
+  //            |
+  //             -- ...
+  //    |
+  //     -- OpenNextTablet1     ->  send predicates2.
+  //    |
+  //     -- ...
   pb->clear_column_predicates();
-  if (!configuration_.spec().predicates().empty()) {
+  if (predicate_update_) {
     for (const auto& col_pred : configuration_.spec().predicates()) {
       ColumnPredicateToPB(col_pred.second, pb->add_column_predicates());
     }
-    configuration_.get_spec().RemovePredicates();
+    predicate_update_ = false;
   }
 }
 
