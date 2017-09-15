@@ -157,9 +157,7 @@ class KuduScanner::Data {
   void PrepareRequest(RequestType state);
 
   // Update the predicates in ContinueScanRequestPB while there are updates.
-  // The function 'merge()' of predicate is idempotent. So, we could send 
-  // the whole predicates again.
-  void PrepareContinueRequest();
+  void PrepareContinueRequestPredicates();
 
   // Update 'last_error_' if need be. Should be invoked whenever a
   // non-fatal (i.e. retriable) scan error is encountered.

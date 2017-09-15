@@ -470,35 +470,6 @@ class ClientTest : public KuduTest {
     }
   }
 
-  void DoTestScanWithStringPredicateInBloomFilterMode() {
-    KuduScanner scanner(client_table_.get());
-
-    KuduValueBloomFilter* bf = KuduValueBloomFilterBuilder()
-                                .SetKuduSchema(&schema_)
-                                .SetColumnName("string_val")
-                                .SetLogSpace(1000, 0.001)
-                                .Build();
-    for (int i = 990; i < 1090; ++i) {
-        bf->Insert(KuduValue::CopyString(Slice(StringPrintf("hello %d", i))));
-    }
-    ASSERT_OK(scanner.AddConjunctPredicate(client_table_->NewBloomFilterPredicate("string_val", bf)));
-
-    LOG_TIMING(INFO, "Scanning with string predicate in bloom filter mode") {
-      ASSERT_OK(scanner.Open());
-
-      ASSERT_TRUE(scanner.HasMoreRows());
-      KuduScanBatch batch;
-      while (scanner.HasMoreRows()) {
-        ASSERT_OK(scanner.NextBatch(&batch));
-        int count = 0;
-        for (const KuduScanBatch::RowPtr& row : batch) {
-          AssertRawDataMatches(
-              scanner.GetProjectionSchema(), batch, row, count++, 4 /* num projected cols */);
-        }
-      }
-    }
-  }
-
   void DoTestScanWithKeyPredicate() {
     KuduScanner scanner(client_table_.get());
     ASSERT_OK(scanner.AddConjunctPredicate(
@@ -521,6 +492,103 @@ class ClientTest : public KuduTest {
           if (k < 5 || k > 10) {
             FAIL() << row.ToString();
           }
+        }
+      }
+    }
+  }
+
+  void DoTestScanWithBloomFilterPredicate() {
+    KuduScanner scanner(client_table_.get());
+    KuduValueBloomFilter* bf = KuduValueBloomFilterBuilder()
+                                .SetKuduSchema(&schema_)
+                                .SetColumnName("string_val")
+                                .SetLogSpace(FLAGS_test_scan_num_rows, 0.001)
+                                .Build();
+    int scan_row_num = 100;
+    for (int i = FLAGS_test_scan_num_rows - scan_row_num;
+            i < FLAGS_test_scan_num_rows + scan_row_num; ++i) {
+        bf->Insert(KuduValue::CopyString(Slice(StringPrintf("hello %d", i))));
+    }
+    ASSERT_OK(scanner.AddConjunctPredicate(client_table_->NewBloomFilterPredicate("string_val", bf)));
+
+    LOG_TIMING(INFO, "Scanning with bloom filter predicate") {
+      ASSERT_OK(scanner.Open());
+      ASSERT_TRUE(scanner.HasMoreRows());
+
+      KuduScanBatch batch;
+      while (scanner.HasMoreRows()) {
+        ASSERT_OK(scanner.NextBatch(&batch));
+        int count = 0;
+        for (const KuduScanBatch::RowPtr& row : batch) {
+          scan_row_num--;
+          AssertRawDataMatches(
+              scanner.GetProjectionSchema(), batch, row, count++, 4 /* num projected cols */);
+        }
+      }
+      ASSERT_EQ(scan_row_num, 0);
+    }
+  }
+  void DoTestScanWithBloomFilterAndRangePredicate() {
+    KuduScanner scanner(client_table_.get());
+
+    // "key" -> Range predicates: [500, 800]
+    ASSERT_OK(scanner.AddConjunctPredicate(
+                  client_table_->NewComparisonPredicate("key", KuduPredicate::GREATER_EQUAL,
+                                                        KuduValue::FromInt(500))));
+    ASSERT_OK(scanner.AddConjunctPredicate(
+                  client_table_->NewComparisonPredicate("key", KuduPredicate::LESS_EQUAL,
+                                                        KuduValue::FromInt(800))));
+
+    // "string_val" -> Range predicates: [600, 900]
+    ASSERT_OK(scanner.AddConjunctPredicate(
+                  client_table_->NewComparisonPredicate("string_val", KuduPredicate::GREATER_EQUAL,
+                                                        KuduValue::CopyString("hello 600"))));
+    ASSERT_OK(scanner.AddConjunctPredicate(
+                  client_table_->NewComparisonPredicate("string_val", KuduPredicate::LESS_EQUAL,
+                                                        KuduValue::CopyString("hello 900"))));
+
+    // "string_val" -> BloomFilter predicate: [700, 1300)
+    KuduValueBloomFilter* bf = KuduValueBloomFilterBuilder()
+                                .SetKuduSchema(&schema_)
+                                .SetColumnName("string_val")
+                                .SetLogSpace(FLAGS_test_scan_num_rows, 0.001)
+                                .Build();
+    int scan_row_num = 300;
+    for (int i = FLAGS_test_scan_num_rows - scan_row_num;
+            i < FLAGS_test_scan_num_rows + scan_row_num; ++i) {
+        bf->Insert(KuduValue::CopyString(Slice(StringPrintf("hello %d", i))));
+    }
+
+    LOG_TIMING(INFO, "Scanning with range and bloom filter predicate") {
+      ASSERT_OK(scanner.SetBatchSizeBytes(100));
+      ASSERT_OK(scanner.Open());
+      ASSERT_TRUE(scanner.HasMoreRows());
+
+      bool bfDone = false;
+      KuduScanBatch batch;
+      while (scanner.HasMoreRows()) {
+        ASSERT_OK(scanner.NextBatch(&batch));
+        for (const KuduScanBatch::RowPtr& row : batch) {
+          int32_t k;
+          ASSERT_OK(row.GetInt32(0, &k));
+          // Result: 
+          //  range1 500---------800
+          //  range2    600--------900           ==> [600, 800]
+          //  bloomfilter  700----------1300     ==> [700, 800]
+          if (bfDone) {
+            if (k < 700 || 800 < k) {
+              FAIL() << row.ToString();
+            }
+          } else {
+            if (k < 600 || 800 < k) {
+              FAIL() << row.ToString();
+            }
+          }
+        }
+
+        if (!bfDone) {
+          ASSERT_OK(scanner.AddConjunctPredicate(client_table_->NewBloomFilterPredicate("string_val", bf)));
+          bfDone = true;
         }
       }
     }
@@ -784,6 +852,17 @@ TEST_F(ClientTest, TestScan) {
   // Scan after re-insert
   InsertTestRows(client_table_.get(), 1);
   DoTestScanWithKeyPredicate();
+}
+
+TEST_F(ClientTest, TestScanWithBloomFilter) {
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(
+      client_table_.get(), FLAGS_test_scan_num_rows));
+
+  ASSERT_EQ(FLAGS_test_scan_num_rows, CountRowsFromClient(client_table_.get()));
+
+  // Scan after insert
+  DoTestScanWithBloomFilterPredicate();
+  DoTestScanWithBloomFilterAndRangePredicate();
 }
 
 TEST_F(ClientTest, TestScanAtSnapshot) {

@@ -1468,11 +1468,9 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
 }
 
 static Status MergePredicates(const ContinueScanRequestPB& scan_pb,
-                              const SharedScanner& scanner,
-                              bool* has_more_results) {
+                              const SharedScanner& scanner) {
   // There are no column predicates in the request.
   if (scan_pb.column_predicates_size() == 0) {
-    *has_more_results = true;
     return Status::OK();
   }
 
@@ -1497,17 +1495,7 @@ static Status MergePredicates(const ContinueScanRequestPB& scan_pb,
     spec->AddPredicate(std::move(*pred));
   }
 
-  VLOG(3) << "Before optimizing scan spec: " << spec->ToString(tablet_schema);
-  spec->OptimizeScan(tablet_schema, scanner->arena(), scanner->autorelease_pool(), true);
-  VLOG(3) << "After optimizing scan spec: " << spec->ToString(tablet_schema);
-
-  if (spec->CanShortCircuit()) {
-    VLOG(1) << "short-circuiting without creating a server-side scanner.";
-    *has_more_results = false;
-    return Status::OK();
-  }
-
-  // Merge column predicates
+  // Merge column predicates and we do not optimize scan spec here.
   RETURN_NOT_OK(iter->Merge(spec.get())); 
   return Status::OK();
 }
@@ -1793,14 +1781,10 @@ Status TabletServiceImpl::HandleContinueScanRequest(const bool real_continue,
   // Only for real continue scan request:
   //   merge predicates into existing iterators during scanning.
   if (real_continue) {
-    Status s = MergePredicates(req->continue_scan_request(), scanner, has_more_results);
+    Status s = MergePredicates(req->continue_scan_request(), scanner);
     if (PREDICT_FALSE(!s.ok())) {
       *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
       return s;
-    }
-    if (!*has_more_results) {
-        VLOG(1) << "No more rows, short-circuiting out after setup scan predicate.";
-        return Status::OK();
     }
   }
 

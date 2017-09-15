@@ -433,6 +433,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   next_req_.clear_new_scan_request();
   data_in_open_ = last_response_.has_data();
   if (last_response_.has_more_results()) {
+    next_req_.mutable_continue_scan_request()->set_scanner_id(last_response_.scanner_id());
     VLOG(2) << "Opened tablet " << remote_->tablet_id()
             << ", scanner ID " << last_response_.scanner_id();
   } else if (last_response_.has_data()) {
@@ -509,15 +510,10 @@ void KuduScanner::Data::PrepareRequest(RequestType state) {
   }
 }
 
-void KuduScanner::Data::PrepareContinueRequest() {
+void KuduScanner::Data::PrepareContinueRequestPredicates() {
   tserver::ContinueScanRequestPB* pb = next_req_.mutable_continue_scan_request();
 
-  // Prepare scanner id.
-  if (!pb->has_scanner_id()) {
-    pb->set_scanner_id(last_response_.scanner_id());
-  }
-
-  // Prepare predicates.
+  // Prepare predicates for continue scan request.
   // The function 'merge()' of predicate is idempotent, so we could
   // resend the whole predicates to tserver if there are any updates.
   // 
@@ -534,8 +530,8 @@ void KuduScanner::Data::PrepareContinueRequest() {
   //     -- OpenNextTablet1     ->  send predicates2.
   //    |
   //     -- ...
-  pb->clear_column_predicates();
   if (predicate_update_) {
+    pb->clear_column_predicates();
     for (const auto& col_pred : configuration_.spec().predicates()) {
       ColumnPredicateToPB(col_pred.second, pb->add_column_predicates());
     }

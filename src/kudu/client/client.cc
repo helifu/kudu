@@ -1234,11 +1234,8 @@ Status KuduScanner::SetTimeoutMillis(int millis) {
 
 Status KuduScanner::AddConjunctPredicate(KuduPredicate* pred) {
   if (data_->open_) {
-    // Take ownership even if we return a bad status.
-    delete pred;
-    return Status::IllegalState("Predicate must be set before Open()");
+    data_->predicate_update_ = true;
   }
-  data_->predicate_update_ = true;
   return data_->mutable_configuration()->AddConjunctPredicate(pred);
 }
 
@@ -1363,7 +1360,7 @@ void KuduScanner::Close() {
   // If the scan did not match any rows, the tserver will not assign a scanner ID.
   // This is reflected in the Open() response. In this case, there is no server-side state
   // to clean up.
-  if (!data_->next_req_.has_continue_scan_request() &&
+  if (data_->next_req_.has_continue_scan_request() &&
       !data_->next_req_.continue_scan_request().scanner_id().empty()) {
     CHECK(data_->proxy_);
     gscoped_ptr<CloseCallback> closer(new CloseCallback);
@@ -1430,7 +1427,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
 
     MonoTime batch_deadline = MonoTime::Now() + data_->configuration().timeout();
     data_->PrepareRequest(KuduScanner::Data::CONTINUE);
-    data_->PrepareContinueRequest();
+    data_->PrepareContinueRequestPredicates();
 
     while (true) {
       bool allow_time_for_failover = data_->configuration().is_fault_tolerant();
