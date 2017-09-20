@@ -517,17 +517,21 @@ void KuduScanner::Data::PrepareContinueRequestPredicates() {
   // The function 'merge()' of predicate is idempotent, so we could
   // resend the whole predicates to tserver if there are any updates.
   // 
-  // KuduScanner::Open()           spec->predicates
+  // KuduScanner::Open()           [spec->predicates]
   //    |
-  //     -- OpenNextTablet0     ->  send predicates0.
-  //            |                                       <--  updates0
-  //             -- NextBatch0  ->  send predicates1: predicates0+updates0.
-  //            |                                       <--  updates1
-  //             -- NextBatch1  ->  send predicates2: predicates1+updates1.
+  //     -- OpenNextTablet0     ->  send predicates0 to tserver.
+  //            |                           |
+  //            |                           |    <-----   updates0
+  //            |                          \_/
+  //             -- NextBatch0  ->  send predicates1 to tserver.
+  //            |                           |
+  //            |                           |    <-----   updates1
+  //            |                          \_/
+  //             -- NextBatch1  ->  send predicates2 to tserver.
   //            |
   //             -- ...
   //    |
-  //     -- OpenNextTablet1     ->  send predicates2.
+  //     -- OpenNextTablet1     ->  send predicates2 to tserver.
   //    |
   //     -- ...
   if (predicate_update_) {

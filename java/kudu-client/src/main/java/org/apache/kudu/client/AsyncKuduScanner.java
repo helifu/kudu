@@ -31,6 +31,7 @@ import static org.apache.kudu.tserver.Tserver.NewScanRequestPB;
 import static org.apache.kudu.tserver.Tserver.ScanRequestPB;
 import static org.apache.kudu.tserver.Tserver.ScanResponsePB;
 import static org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
+import static org.apache.kudu.tserver.Tserver.ContinueScanRequestPB;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -819,12 +820,18 @@ public final class AsyncKuduScanner {
                  .setBatchSizeBytes(batchSizeBytes);
           break;
         case NEXT:
-          builder.setScannerId(UnsafeByteOperations.unsafeWrap(scannerId))
+          ContinueScanRequestPB.Builder nextBuilder = ContinueScanRequestPB.newBuilder();
+          nextBuilder.setScannerId(UnsafeByteOperations.unsafeWrap(scannerId));
+          // TODO: add updated predicates later ...
+          // ...
+          builder.setContinueScanRequest(nextBuilder.build())
                  .setCallSeqId(AsyncKuduScanner.this.sequenceId)
                  .setBatchSizeBytes(batchSizeBytes);
           break;
         case CLOSING:
-          builder.setScannerId(UnsafeByteOperations.unsafeWrap(scannerId))
+          ContinueScanRequestPB.Builder closeBuilder = ContinueScanRequestPB.newBuilder();
+          closeBuilder.setScannerId(UnsafeByteOperations.unsafeWrap(scannerId));
+          builder.setContinueScanRequest(closeBuilder.build())
                  .setBatchSizeBytes(0)
                  .setCloseScanner(true);
           break;
