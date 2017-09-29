@@ -534,8 +534,8 @@ void KuduScanner::Data::PrepareContinueRequestPredicates() {
   //     -- OpenNextTablet1     ->  send predicates2 to tserver.
   //    |
   //     -- ...
+  pb->clear_column_predicates();
   if (predicate_update_) {
-    pb->clear_column_predicates();
     for (const auto& col_pred : configuration_.spec().predicates()) {
       ColumnPredicateToPB(col_pred.second, pb->add_column_predicates());
     }
