@@ -16,6 +16,7 @@
 // under the License.
 
 #include "kudu/common/bloomfilter/bloom-filter.h"
+#include "kudu/common/bloomfilter/raw-value.inline.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -368,4 +369,51 @@ TEST(TestImpalaBloomFilter, BloomFilterAnd) {
   ASSERT_FALSE(BfFind(bf2, 81));
 }
 
+TEST(TestImpalaBloomFilter, BloomFilterInsertAndScanPerformance) {
+  printf("@@@input ndv> ");
+  char input[64];
+  scanf("%s", input);
+  const int ndv = atoi(input);
+
+  BloomFilter* bf = new BloomFilter(24);
+  MonoTime helf1 = MonoTime::Now();
+  for (int i = 0; i < ndv; ++i) {
+    bf->Insert(impala_kudu::GetHashValue<INT32>(&i));
+  }
+  MonoTime helf2 = MonoTime::Now();
+  for (int i = 0; i < ndv; ++i) {
+    bf->Find(impala_kudu::GetHashValue<INT32>(&i));
+  }
+  MonoTime helf3 = MonoTime::Now();
+
+  LOG(INFO) << "GetHeapSpaceUsed: " << bf->GetHeapSpaceUsed();
+  LOG(INFO) << "Insert duration: " << (helf2-helf1).ToMilliseconds() << "ms.";
+  LOG(INFO) << "Scan   duration: " << (helf3-helf2).ToMilliseconds() << "ms.";
+}
+
+TEST(TestImpalaBloomFilter, BloomFilterAndPerformance) {
+  printf("@@@input space> ");
+  char input[64];
+  scanf("%s", input);
+  const int space = atoi(input);
+
+  MonoTime helf1 = MonoTime::Now();
+  BloomFilter* bf1 = new BloomFilter(space);
+  for (int i = 0; i < 100; ++i) {
+    bf1->Insert(impala_kudu::GetHashValue<INT32>(&i));
+  }
+  BloomFilter* bf2 = new BloomFilter(space);
+  for (int i = 100000; i < 100100; ++i) {
+    bf2->Insert(impala_kudu::GetHashValue<INT32>(&i));
+  }
+  MonoTime helf2 = MonoTime::Now();
+  for (int i = 0; i < 10; ++i) {
+    BloomFilter::And(bf1, bf2);
+  }
+  MonoTime helf3 = MonoTime::Now();
+
+  LOG(INFO) << "GetHeapSpaceUsed: " << bf1->GetHeapSpaceUsed();
+  LOG(INFO) << "Init duration: " << (helf2-helf1).ToMilliseconds() << "ms.";
+  LOG(INFO) << "And duration: " << (helf3-helf2).ToMilliseconds() << "ms.";
+}
 }  // namespace impala_kudu

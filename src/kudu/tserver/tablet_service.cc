@@ -1394,7 +1394,9 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
   for (const ColumnPredicatePB& pred_pb : scan_pb.column_predicates()) {
     boost::optional<ColumnPredicate> predicate;
     RETURN_NOT_OK(ColumnPredicateFromPB(tablet_schema, scanner->arena(), pred_pb, &predicate));
-
+    LOG(INFO) << "SetupScanSpec"
+              << ": column name->" << predicate->column().name()
+              << ", predicate type->" << (int)(predicate->predicate_type());
     if (projection.find_column(predicate->column().name()) == Schema::kColumnNotFound &&
         !ContainsKey(missing_col_names, predicate->column().name())) {
       InsertOrDie(&missing_col_names, predicate->column().name());
@@ -1487,7 +1489,9 @@ static Status MergePredicates(const ContinueScanRequestPB& scan_pb,
   for (const ColumnPredicatePB& pb : scan_pb.column_predicates()) {
     boost::optional<ColumnPredicate> pred;
     RETURN_NOT_OK(ColumnPredicateFromPB(tablet_schema, scanner->arena(), pb, &pred));
-
+    LOG(INFO) << "MergePredicates"
+              << ": column name->" << pred->column().name()
+              << ", predicate type->" << (int)(pred->predicate_type());
     if (projection.find_column(pred->column().name()) == Schema::kColumnNotFound) {
       return Status::InvalidArgument("No such column", pred->column().name());
     }
@@ -1799,6 +1803,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const bool real_continue,
   // just use a half second, which should be plenty to amortize call overhead.
   int budget_ms = 500;
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(budget_ms);
+  MonoTime helf1 = MonoTime::Now();
 
   int64_t rows_scanned = 0;
   while (iter->HasNext()) {
@@ -1839,6 +1844,10 @@ Status TabletServiceImpl::HandleContinueScanRequest(const bool real_continue,
       break;
     }
   }
+  MonoTime helf2 = MonoTime::Now();
+  MonoDelta helf3 = helf2 - helf1;
+  LOG(INFO) << "Scan duration: " << helf3.ToMilliseconds() << " ms and "
+            << " rows:" << rows_scanned;
 
   scoped_refptr<TabletReplica> replica = scanner->tablet_replica();
   shared_ptr<Tablet> tablet;
