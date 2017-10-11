@@ -54,6 +54,7 @@ using internal::RemoteTabletServer;
 
 KuduScanner::Data::Data(KuduTable* table)
   : configuration_(table),
+    predicate_update_(false),
     open_(false),
     data_in_open_(false),
     short_circuit_(false),
@@ -292,7 +293,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
                                      set<string>* blacklist) {
 
   PrepareRequest(KuduScanner::Data::NEW);
-  next_req_.clear_scanner_id();
+  next_req_.clear_continue_scan_request();
   NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
   scan->set_row_format_flags(configuration_.row_format_flags());
   const KuduScanner::ReadMode read_mode = configuration_.read_mode();
@@ -338,8 +339,9 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   // Set up the predicates.
   scan->clear_column_predicates();
   for (const auto& col_pred : configuration_.spec().predicates()) {
-    ColumnPredicateToPB(col_pred.second, scan->add_column_predicates());
+      ColumnPredicateToPB(col_pred.second, scan->add_column_predicates());
   }
+  predicate_update_ = false;
 
   if (configuration_.spec().lower_bound_key()) {
     scan->mutable_start_primary_key()->assign(
@@ -431,7 +433,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   next_req_.clear_new_scan_request();
   data_in_open_ = last_response_.has_data();
   if (last_response_.has_more_results()) {
-    next_req_.set_scanner_id(last_response_.scanner_id());
+    next_req_.mutable_continue_scan_request()->set_scanner_id(last_response_.scanner_id());
     VLOG(2) << "Opened tablet " << remote_->tablet_id()
             << ", scanner ID " << last_response_.scanner_id();
   } else if (last_response_.has_data()) {
@@ -470,14 +472,14 @@ Status KuduScanner::Data::KeepAlive() {
   if (!open_) return Status::IllegalState("Scanner was not open.");
   // If there is no scanner to keep alive, we still return Status::OK().
   if (!last_response_.IsInitialized() || !last_response_.has_more_results() ||
-      !next_req_.has_scanner_id()) {
+      !next_req_.has_continue_scan_request()) {
     return Status::OK();
   }
 
   RpcController controller;
   controller.set_timeout(configuration_.timeout());
   tserver::ScannerKeepAliveRequestPB request;
-  request.set_scanner_id(next_req_.scanner_id());
+  request.set_scanner_id(next_req_.mutable_continue_scan_request()->scanner_id());
   tserver::ScannerKeepAliveResponsePB response;
   RETURN_NOT_OK(proxy_->ScannerKeepAlive(request, &response, &controller));
   if (response.has_error()) {
@@ -505,6 +507,39 @@ void KuduScanner::Data::PrepareRequest(RequestType state) {
     next_req_.set_call_seq_id(0);
   } else {
     next_req_.set_call_seq_id(next_req_.call_seq_id() + 1);
+  }
+}
+
+void KuduScanner::Data::PrepareContinueRequestPredicates() {
+  tserver::ContinueScanRequestPB* pb = next_req_.mutable_continue_scan_request();
+
+  // Prepare predicates for continue scan request.
+  // The function 'merge()' of predicate is idempotent, so we could
+  // resend the whole predicates to tserver if there are any updates.
+  // 
+  // KuduScanner::Open()           [spec->predicates]
+  //    |
+  //     -- OpenNextTablet0     ->  send predicates0 to tserver.
+  //            |                           |
+  //            |                           |    <-----   updates0
+  //            |                          \_/
+  //             -- NextBatch0  ->  send predicates1 to tserver.
+  //            |                           |
+  //            |                           |    <-----   updates1
+  //            |                          \_/
+  //             -- NextBatch1  ->  send predicates2 to tserver.
+  //            |
+  //             -- ...
+  //    |
+  //     -- OpenNextTablet1     ->  send predicates2 to tserver.
+  //    |
+  //     -- ...
+  pb->clear_column_predicates();
+  if (predicate_update_) {
+    for (const auto& col_pred : configuration_.spec().predicates()) {
+      ColumnPredicateToPB(col_pred.second, pb->add_column_predicates());
+    }
+    predicate_update_ = false;
   }
 }
 

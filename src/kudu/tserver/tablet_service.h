@@ -97,7 +97,9 @@ class TabletServiceImpl : public TabletServerServiceIf {
                               bool* has_more_results,
                               TabletServerErrorPB::Code* error_code);
 
-  Status HandleContinueScanRequest(const ScanRequestPB* req,
+  Status HandleContinueScanRequest(const bool real_continue,
+                                   const ScanRequestPB* req,
+                                   const std::string& scanner_id,
                                    ScanResultCollector* result_collector,
                                    bool* has_more_results,
                                    TabletServerErrorPB::Code* error_code);

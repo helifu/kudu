@@ -179,7 +179,6 @@ void ColumnPredicate::SetToNone() {
   predicate_type_ = PredicateType::None;
   lower_ = nullptr;
   upper_ = nullptr;
-  //bf_.reset();
   bf_ = nullptr;
 }
 

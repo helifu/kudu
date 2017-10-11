@@ -155,6 +155,11 @@ class MergeIterState {
     return iter_;
   }
 
+  Status Merge(ScanSpec* spec) {
+    RETURN_NOT_OK(PredicateEvaluatingIterator::MergeAndMaybeWrap(&iter_, spec));
+    return Status::OK();
+  }
+
   shared_ptr<RowwiseIterator> iter_;
   Arena arena_;
   RowBlock read_block_;
@@ -224,6 +229,20 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
   // them here.
   if (spec != nullptr) {
     spec->RemovePredicates();
+  }
+  return Status::OK();
+}
+
+Status MergeIterator::Merge(ScanSpec *spec) {
+  CHECK(initted_);
+  RETURN_NOT_OK(MergeSubIterators(spec));
+  return Status::OK();
+}
+
+Status MergeIterator::MergeSubIterators(ScanSpec* spec) {
+  for (auto& iter : iters_) {
+    ScanSpec* spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
+    RETURN_NOT_OK(iter->Merge(spec_copy));
   }
   return Status::OK();
 }
@@ -365,6 +384,20 @@ Status UnionIterator::InitSubIterators(ScanSpec *spec) {
   return Status::OK();
 }
 
+Status UnionIterator::Merge(ScanSpec *spec) {
+  CHECK(initted_);
+  RETURN_NOT_OK(MergeSubIterators(spec));
+  return Status::OK();
+}
+
+Status UnionIterator::MergeSubIterators(ScanSpec* spec) {
+  for (shared_ptr<RowwiseIterator>& iter : iters_) {
+    ScanSpec* spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
+    RETURN_NOT_OK(PredicateEvaluatingIterator::MergeAndMaybeWrap(&iter, spec_copy));
+  }
+  return Status::OK();
+}
+
 bool UnionIterator::HasNext() const {
   CHECK(initted_);
   for (const shared_ptr<RowwiseIterator> &iter : iters_) {
@@ -489,6 +522,56 @@ Status MaterializingIterator::Init(ScanSpec *spec) {
   return Status::OK();
 }
 
+Status MaterializingIterator::Merge(ScanSpec *spec) {
+  if (spec != nullptr && !disallow_pushdown_for_tests_) {
+    // Traverse the new predicates
+    for (const auto& one : spec->predicates()) {
+      // Must be true because we have checked before.
+      int col_idx = schema().find_column(one.first);
+      const ColumnPredicate& pred = one.second;
+
+      // Traverse 'col_idx_predicates_' to find the matched predicate.
+      ColumnPredicate* predicate = nullptr;
+      for (auto& two : col_idx_predicates_) {
+        if (col_idx == get<0>(two)) {
+          predicate = &get<1>(two);
+          break;
+        }
+      }
+      if (predicate != nullptr) {
+        // merge.
+        predicate->Merge(pred);
+      } else {
+        // insert a new one.
+        col_idx_predicates_.emplace_back(col_idx, move(pred));
+
+        // Traverse 'non_predicate_column_indexes_' to remove the corresponding column.
+        for (auto it = non_predicate_column_indexes_.begin();
+             it != non_predicate_column_indexes_.end(); ++it) {
+          if (col_idx == (*it)) {
+            non_predicate_column_indexes_.erase(it);
+            break;
+          }
+        }
+      }
+    }
+
+    // Sort the predicates by selectivity so that the most selective are evaluated earlier.
+    sort(col_idx_predicates_.begin(), col_idx_predicates_.end(),
+         [] (const tuple<int32_t, ColumnPredicate>& left,
+             const tuple<int32_t, ColumnPredicate>& right) {
+           return SelectivityComparator(get<1>(left), get<1>(right));
+         });
+
+    spec->RemovePredicates();
+  } else {
+    // In this branch, the predicates will be merged in PredicateEvaluatingIterator later.
+    // And the 'non_predicate_column_indexes_' should not be updated.
+  }
+
+  return Status::OK();
+}
+
 bool MaterializingIterator::HasNext() const {
   return iter_->HasNext();
 }
@@ -584,15 +667,59 @@ Status PredicateEvaluatingIterator::Init(ScanSpec *spec) {
 
   // Gather any predicates that the base iterator did not pushdown, and remove
   // the predicates from the spec.
-  col_idx_predicates_.clear();
-  col_idx_predicates_.reserve(spec->predicates().size());
+  col_predicates_.clear();
+  col_predicates_.reserve(spec->predicates().size());
   for (auto& predicate : spec->predicates()) {
-    col_idx_predicates_.emplace_back(move(predicate.second));
+    col_predicates_.emplace_back(move(predicate.second));
   }
   spec->RemovePredicates();
 
   // Sort the predicates by selectivity so that the most selective are evaluated earlier.
-  sort(col_idx_predicates_.begin(), col_idx_predicates_.end(), SelectivityComparator);
+  sort(col_predicates_.begin(), col_predicates_.end(), SelectivityComparator);
+
+  return Status::OK();
+}
+
+Status PredicateEvaluatingIterator::MergeAndMaybeWrap(
+  std::shared_ptr<RowwiseIterator>* base_iter, ScanSpec* spec) {
+  // The 'base_iter' maybe:
+  //    1) MaterializingIterator
+  //    2) MemRowSet::Iterator
+  //    3) PredicateEvaluatingIterator
+  RETURN_NOT_OK((*base_iter)->Merge(spec));
+  if (spec != nullptr && !spec->predicates().empty()) {
+    shared_ptr<RowwiseIterator> wrapper(new PredicateEvaluatingIterator(*base_iter));
+    CHECK_OK(wrapper->Merge(spec));
+    base_iter->swap(wrapper);
+  }
+  return Status::OK();
+}
+
+Status PredicateEvaluatingIterator::Merge(ScanSpec *spec) {
+  // Traverse the new predicates
+  for (const auto& one : spec->predicates()) {
+    const ColumnPredicate& pred = one.second;
+
+    // Traverse 'col_predicates_' to find the matched predicate.
+    ColumnPredicate* predicate = nullptr;
+    for (auto& two : col_predicates_) {
+      if (one.first == two.column().name()) {
+        predicate = &two;
+        break;
+      }
+    }
+    if (predicate != nullptr) {
+      // Merge.
+      predicate->Merge(pred);
+    } else {
+      // insert a new one.
+      col_predicates_.emplace_back(move(pred));
+    }
+  }
+  spec->RemovePredicates();
+
+  // Sort the predicates by selectivity so that the most selective are evaluated earlier.
+  sort(col_predicates_.begin(), col_predicates_.end(), SelectivityComparator);
 
   return Status::OK();
 }
@@ -604,7 +731,7 @@ bool PredicateEvaluatingIterator::HasNext() const {
 Status PredicateEvaluatingIterator::NextBlock(RowBlock *dst) {
   RETURN_NOT_OK(base_iter_->NextBlock(dst));
 
-  for (const auto& predicate : col_idx_predicates_) {
+  for (const auto& predicate : col_predicates_) {
     int32_t col_idx = dst->schema().find_column(predicate.column().name());
     if (col_idx == Schema::kColumnNotFound) {
       return Status::InvalidArgument("Unknown column in predicate", predicate.ToString());

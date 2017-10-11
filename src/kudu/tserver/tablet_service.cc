@@ -1119,11 +1119,11 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
                              rpc::RpcContext* context) {
   TRACE_EVENT0("tserver", "TabletServiceImpl::Scan");
   // Validate the request: user must pass a new_scan_request or
-  // a scanner ID, but not both.
-  if (PREDICT_FALSE(req->has_scanner_id() &&
-                    req->has_new_scan_request())) {
+  // a continue_scan_request, but not both.
+  if (PREDICT_FALSE(req->has_new_scan_request() &&
+                    req->has_continue_scan_request())) {
     context->RespondFailure(Status::InvalidArgument(
-                            "Must not pass both a scanner_id and new_scan_request"));
+                            "Must not pass both new_scan_request and continue_scan_request"));
     return;
   }
 
@@ -1159,8 +1159,9 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
     if (scan_timestamp != Timestamp::kInvalidTimestamp) {
       resp->set_snap_timestamp(scan_timestamp.ToUint64());
     }
-  } else if (req->has_scanner_id()) {
-    Status s = HandleContinueScanRequest(req, &collector, &has_more_results, &error_code);
+  } else if (req->has_continue_scan_request()) {
+    const ContinueScanRequestPB& scan_pb = req->continue_scan_request();
+    Status s = HandleContinueScanRequest(true, req, scan_pb.scanner_id(), &collector, &has_more_results, &error_code);
     if (PREDICT_FALSE(!s.ok())) {
       SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
       return;
@@ -1270,8 +1271,8 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
   } else if (req->has_continue_request()) {
     const ContinueChecksumRequestPB& continue_req = req->continue_request();
     collector.set_agg_checksum(continue_req.previous_checksum());
-    scan_req.set_scanner_id(continue_req.scanner_id());
-    Status s = HandleContinueScanRequest(&scan_req, &collector, &has_more, &error_code);
+    scan_req.mutable_continue_scan_request()->set_scanner_id(continue_req.scanner_id());
+    Status s = HandleContinueScanRequest(true, &scan_req, continue_req.scanner_id(), &collector, &has_more, &error_code);
     if (PREDICT_FALSE(!s.ok())) {
       SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
       return;
@@ -1393,7 +1394,9 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
   for (const ColumnPredicatePB& pred_pb : scan_pb.column_predicates()) {
     boost::optional<ColumnPredicate> predicate;
     RETURN_NOT_OK(ColumnPredicateFromPB(tablet_schema, scanner->arena(), pred_pb, &predicate));
-
+    LOG(INFO) << "SetupScanSpec"
+              << ": column name->" << predicate->column().name()
+              << ", predicate type->" << (int)(predicate->predicate_type());
     if (projection.find_column(predicate->column().name()) == Schema::kColumnNotFound &&
         !ContainsKey(missing_col_names, predicate->column().name())) {
       InsertOrDie(&missing_col_names, predicate->column().name());
@@ -1463,6 +1466,41 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
   RETURN_NOT_OK(DecodeEncodedKeyRange(scan_pb, tablet_schema, scanner, ret.get()));
 
   spec->swap(ret);
+  return Status::OK();
+}
+
+static Status MergePredicates(const ContinueScanRequestPB& scan_pb,
+                              const SharedScanner& scanner) {
+  // There are no column predicates in the request.
+  if (scan_pb.column_predicates_size() == 0) {
+    return Status::OK();
+  }
+
+  // Get 'tablet schema'
+  scoped_refptr<TabletReplica> replica = scanner->tablet_replica();
+  const Schema& tablet_schema = replica->tablet_metadata()->schema();
+
+  // Get 'projection'
+  RowwiseIterator* iter = scanner->iter();
+  const Schema& projection = iter->schema();
+
+  // Create ScanSpec and Collect the column predicates.
+  gscoped_ptr<ScanSpec> spec(new ScanSpec);
+  for (const ColumnPredicatePB& pb : scan_pb.column_predicates()) {
+    boost::optional<ColumnPredicate> pred;
+    RETURN_NOT_OK(ColumnPredicateFromPB(tablet_schema, scanner->arena(), pb, &pred));
+    LOG(INFO) << "MergePredicates"
+              << ": column name->" << pred->column().name()
+              << ", predicate type->" << (int)(pred->predicate_type());
+    if (projection.find_column(pred->column().name()) == Schema::kColumnNotFound) {
+      return Status::InvalidArgument("No such column", pred->column().name());
+    }
+
+    spec->AddPredicate(std::move(*pred));
+  }
+
+  // Merge column predicates and we do not optimize scan spec here.
+  RETURN_NOT_OK(iter->Merge(spec.get())); 
   return Status::OK();
 }
 
@@ -1684,11 +1722,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
   if (batch_size_bytes > 0) {
     TRACE("Continuing scan request");
-    // TODO: instead of copying the pb, instead split HandleContinueScanRequest
-    // and call the second half directly
-    ScanRequestPB continue_req(*req);
-    continue_req.set_scanner_id(scanner->id());
-    RETURN_NOT_OK(HandleContinueScanRequest(&continue_req, result_collector, has_more_results,
+    RETURN_NOT_OK(HandleContinueScanRequest(false, req, *scanner_id, result_collector, has_more_results,
                                             error_code));
   } else {
     // Increment the scanner call sequence ID. HandleContinueScanRequest handles
@@ -1699,13 +1733,14 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
 }
 
 // Continue an existing scan request.
-Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
+Status TabletServiceImpl::HandleContinueScanRequest(const bool real_continue,
+                                                    const ScanRequestPB* req,
+                                                    const std::string& scanner_id,
                                                     ScanResultCollector* result_collector,
                                                     bool* has_more_results,
                                                     TabletServerErrorPB::Code* error_code) {
-  DCHECK(req->has_scanner_id());
   TRACE_EVENT1("tserver", "TabletServiceImpl::HandleContinueScanRequest",
-               "scanner_id", req->scanner_id());
+               "scanner_id", scanner_id);
 
   size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
 
@@ -1713,7 +1748,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   // in case multiple RPCs hit the same scanner at the same time. Probably
   // just a trylock and fail the RPC if it contends.
   SharedScanner scanner;
-  if (!server_->scanner_manager()->LookupScanner(req->scanner_id(), &scanner)) {
+  if (!server_->scanner_manager()->LookupScanner(scanner_id, &scanner)) {
     if (batch_size_bytes == 0 && req->close_scanner()) {
       // A request to close a non-existent scanner.
       return Status::OK();
@@ -1747,6 +1782,16 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   RowwiseIterator* iter = scanner->iter();
 
+  // Only for real continue scan request:
+  //   merge predicates into existing iterators during scanning.
+  if (real_continue) {
+    Status s = MergePredicates(req->continue_scan_request(), scanner);
+    if (PREDICT_FALSE(!s.ok())) {
+      *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
+      return s;
+    }
+  }
+
   // TODO: could size the RowBlock based on the user's requested batch size?
   // If people had really large indirect objects, we would currently overshoot
   // their requested batch size by a lot.
@@ -1758,6 +1803,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   // just use a half second, which should be plenty to amortize call overhead.
   int budget_ms = 500;
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(budget_ms);
+  MonoTime helf1 = MonoTime::Now();
 
   int64_t rows_scanned = 0;
   while (iter->HasNext()) {
@@ -1798,6 +1844,10 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
       break;
     }
   }
+  MonoTime helf2 = MonoTime::Now();
+  MonoDelta helf3 = helf2 - helf1;
+  LOG(INFO) << "Scan duration: " << helf3.ToMilliseconds() << " ms and "
+            << " rows:" << rows_scanned;
 
   scoped_refptr<TabletReplica> replica = scanner->tablet_replica();
   shared_ptr<Tablet> tablet;

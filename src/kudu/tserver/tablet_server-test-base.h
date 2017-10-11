@@ -289,7 +289,7 @@ class TabletServerTestBase : public KuduTest {
     rpc.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
     ScanRequestPB req;
     ScanResponsePB resp;
-    req.set_scanner_id(scanner_id);
+    req.mutable_continue_scan_request()->set_scanner_id(scanner_id);
 
     // NOTE: we do not sort the results here, since this function is used
     // by test cases which are verifying the server side's ability to

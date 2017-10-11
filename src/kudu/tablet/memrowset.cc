@@ -419,6 +419,11 @@ Status MemRowSet::Iterator::Init(ScanSpec *spec) {
   return Status::OK();
 }
 
+Status MemRowSet::Iterator::Merge(ScanSpec *spec) {
+  DCHECK_NE(state_, kUninitialized) << "not initted";
+  return Status::OK();
+}
+
 Status MemRowSet::Iterator::SeekAtOrAfter(const Slice &key, bool *exact) {
   DCHECK_NE(state_, kUninitialized) << "not initted";
 

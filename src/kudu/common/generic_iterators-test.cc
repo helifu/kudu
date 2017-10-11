@@ -291,7 +291,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
 
   ASSERT_EQ(0, spec.predicates().size())
     << "Iterator tree should have accepted predicate";
-  ASSERT_EQ(1, pred_eval->col_idx_predicates_.size())
+  ASSERT_EQ(1, pred_eval->col_predicates_.size())
     << "Predicate should be evaluated by the outer iterator";
 
   Arena arena(1024, 1024);

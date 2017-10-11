@@ -2119,6 +2119,11 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
   return Status::OK();
 }
 
+Status Tablet::Iterator::Merge(ScanSpec *spec) {
+  DCHECK(iter_.get() != nullptr) << "Not initialized!";
+  return iter_->Merge(spec);
+}
+
 bool Tablet::Iterator::HasNext() const {
   DCHECK(iter_.get() != nullptr) << "Not initialized!";
   return iter_->HasNext();

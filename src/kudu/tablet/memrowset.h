@@ -426,6 +426,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   virtual Status Init(ScanSpec *spec) OVERRIDE;
 
+  virtual Status Merge(ScanSpec *spec) OVERRIDE;
+
   Status SeekAtOrAfter(const Slice &key, bool *exact);
 
   virtual Status NextBlock(RowBlock *dst) OVERRIDE;
