@@ -953,9 +953,9 @@ int SelectivityRank(const ColumnPredicate& predicate) {
     case PredicateType::IsNull: rank = 1; break;
     case PredicateType::Equality: rank = 2; break;
     case PredicateType::InList: rank = 3; break;
-    case PredicateType::BloomFilter: rank = 4; break;
-    case PredicateType::Range: rank = 5; break;
-    case PredicateType::IsNotNull: rank = 6; break;
+    case PredicateType::Range: rank = 4; break;
+    case PredicateType::IsNotNull: rank = 5; break;
+    case PredicateType::BloomFilter: rank = 6; break;
     default: LOG(FATAL) << "unknown predicate type";
   }
   return rank * (kLargestTypeSize + 1) + predicate.column().type_info()->size();
