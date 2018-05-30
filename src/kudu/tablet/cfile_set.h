@@ -27,6 +27,7 @@
 
 #include "kudu/cfile/bloomfile.h"
 #include "kudu/cfile/cfile_reader.h"
+#include "kudu/cfile/indexfile.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
@@ -45,6 +46,7 @@ using kudu::cfile::BloomFileReader;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 using kudu::cfile::ColumnIterator;
+using kudu::cfile::CMultiIndexFileReader;
 
 // Set of CFiles which make up the base data for a single rowset
 //
@@ -67,6 +69,9 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   // See RowSet::GetBounds
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const;
+  virtual Status GetColumnBounds(const ColumnId col_id,
+                                 std::string* min_encoded_key,
+                                 std::string* max_encoded_key) const;
 
   uint64_t EstimateOnDiskSize() const;
 
@@ -109,6 +114,7 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   Status NewColumnIterator(ColumnId col_id, CFileReader::CacheControl cache_blocks,
                            CFileIterator **iter) const;
   Status NewKeyIterator(CFileIterator** key_iter) const;
+  Status NewIndexIterator(CMultiIndexFileReader::Iterator** index_iter) const;
 
   // Return the CFileReader responsible for reading the key index.
   // (the ad-hoc reader for composite keys, otherwise the key column reader)
@@ -133,6 +139,9 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   // index pertains to more than one column, as in the case of composite keys.
   std::unique_ptr<CFileReader> ad_hoc_idx_reader_;
   gscoped_ptr<BloomFileReader> bloom_reader_;
+
+  // Index file reader
+  gscoped_ptr<CMultiIndexFileReader> index_reader_;
 };
 
 
@@ -201,6 +210,11 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   // store it in member fields.
   Status PushdownRangeScanPredicate(ScanSpec *spec);
 
+  // Look for a predicate which can be converted into a equality scan using the
+  // index column.
+  Status CreateIndexIterators();
+  Status PushdownIndexRangeScanPredicate(ScanSpec* spec);
+
   void Unprepare();
 
   // Prepare the given column if not already prepared.
@@ -212,6 +226,9 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   // Iterator for the key column in the underlying data.
   gscoped_ptr<CFileIterator> key_iter_;
   std::vector<std::unique_ptr<ColumnIterator>> col_iters_;
+
+  // Iterator for the index columns.
+  gscoped_ptr<CMultiIndexFileReader::Iterator> index_iter_;
 
   bool initted_;
 

@@ -288,6 +288,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Return standard "T xxx P yyy" log prefix.
   std::string LogPrefix() const;
 
+  //
+  void UpdateTabletIndexBit();
+
   enum State {
     kNotLoadedYet,
     kNotWrittenYet,
@@ -351,6 +354,13 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // A callback that, if set, is called before this metadata is flushed
   // to disk.
   StatusClosure pre_flush_callback_;
+
+  // Secondary index: 
+  //  one bit corresponds to one column,
+  //  the value of one bit means whether there is a index,
+  //  '1' means yes, '0' means no.
+  // Calculate from the newest Schema.
+  uint32_t tablet_index_bit_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletMetadata);
 };

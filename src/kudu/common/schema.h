@@ -134,6 +134,9 @@ public:
   boost::optional<EncodingType> encoding;
   boost::optional<CompressionType> compression;
   boost::optional<int32_t> cfile_block_size;
+
+  boost::optional<std::string> index_name;
+  boost::optional<bool> drop_index;
 };
 
 // The schema for a given column.
@@ -161,8 +164,10 @@ class ColumnSchema {
   ColumnSchema(string name, DataType type, bool is_nullable = false,
                const void* read_default = NULL,
                const void* write_default = NULL,
+               string index_name = "",
                ColumnStorageAttributes attributes = ColumnStorageAttributes())
       : name_(std::move(name)),
+        index_name_(index_name),
         type_info_(GetTypeInfo(type)),
         is_nullable_(is_nullable),
         read_default_(read_default ? new Variant(type, read_default) : NULL),
@@ -182,8 +187,16 @@ class ColumnSchema {
     return is_nullable_;
   }
 
+  bool is_indexed() const {
+      return (index_name_.length()>0)?true:false;
+  }
+
   const string &name() const {
     return name_;
+  }
+
+  const string& index_name() const {
+      return index_name_;
   }
 
   // Return a string identifying this column, including its
@@ -247,8 +260,9 @@ class ColumnSchema {
     COMPARE_NAME = 1 << 0,
     COMPARE_TYPE = 1 << 1,
     COMPARE_DEFAULTS = 1 << 2,
+    COMPARE_INDEX = 1 << 3,
 
-    COMPARE_ALL = COMPARE_NAME | COMPARE_TYPE | COMPARE_DEFAULTS
+    COMPARE_ALL = COMPARE_NAME | COMPARE_TYPE | COMPARE_DEFAULTS | COMPARE_INDEX
   };
 
   bool Equals(const ColumnSchema &other,
@@ -274,6 +288,9 @@ class ColumnSchema {
 
       if (write_default_ != NULL && !write_default_->Equals(other.write_default_.get()))
         return false;
+    }
+    if ((flags & COMPARE_INDEX) && this->index_name_ != other.index_name_) {
+      return false;
     }
     return true;
   }
@@ -334,6 +351,7 @@ class ColumnSchema {
   }
 
   string name_;
+  string index_name_;
   const TypeInfo *type_info_;
   bool is_nullable_;
   // use shared_ptr since the ColumnSchema is always copied around.
@@ -367,7 +385,8 @@ class Schema {
                      NameToIndexMap::hasher(),
                      NameToIndexMap::key_equal(),
                      NameToIndexMapAllocator(&name_to_index_bytes_)),
-      has_nullables_(false) {
+      has_nullables_(false),
+      has_indexed_(false) {
   }
 
   Schema(const Schema& other);
@@ -502,6 +521,11 @@ class Schema {
   // Returns true if the schema contains nullable columns
   bool has_nullables() const {
     return has_nullables_;
+  }
+
+  // Returns true if the schema contains indexed columns
+  bool has_index() const {
+    return has_indexed_;
   }
 
   // Returns true if the specified column (by name) is a key
@@ -846,6 +870,9 @@ class Schema {
 
   // Cached indicator whether any columns are nullable.
   bool has_nullables_;
+
+  // Cached indicator whether any columns are indexed.
+  bool has_indexed_;
 
   // NOTE: if you add more members, make sure to add the appropriate
   // code to swap() and CopyFrom() as well to prevent subtle bugs.

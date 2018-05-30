@@ -164,6 +164,44 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
   return Status::OK();
 }
 
+Status RowSetTree::ResetIndexTree(const Schema& schema, const RowSetVector &rowsets) {
+  CHECK(initted_);
+  for (int i = 0; i < schema.num_columns(); ++i) {
+    if (!schema.column(i).is_indexed()) continue;
+
+    const ColumnId& col_id = schema.column_id(i);
+    ColumnIdToIndexTreeMap::iterator iter = col_id_to_index_tree_.find(col_id);
+    if (iter == col_id_to_index_tree_.end()) {
+      std::unique_ptr<IndexTreeStruct> one(new IndexTreeStruct());
+      iter = col_id_to_index_tree_.insert(ColumnIdToIndexTreeMap::value_type(col_id, std::move(one))).first;
+    }
+
+    for (const shared_ptr<RowSet>& rs : rowsets) {
+      gscoped_ptr<RowSetWithBounds> entry(new RowSetWithBounds());
+      entry->rowset = rs.get();
+      Status s = rs->GetColumnBounds(col_id, &(entry->min_key), &(entry->max_key));
+      if (s.IsNotSupported()) {
+        iter->second->unbounded_rowsets.push_back(rs);
+        continue;
+      } else if (!s.ok()) {
+        LOG(WARNING) << "Unable to construct RowSetTree: "
+                     << rs->ToString() << " unable to determine its bounds: "
+                     << s.ToString();
+        return s;
+      }
+
+      iter->second->endpoints.push_back(RSEndpoint(entry->rowset, START, entry->min_key));
+      iter->second->endpoints.push_back(RSEndpoint(entry->rowset, STOP,  entry->max_key));
+      iter->second->entries.push_back(entry.release());
+    }
+
+    std::sort(iter->second->endpoints.begin(), iter->second->endpoints.end(), RSEndpointBySliceCompare);
+    iter->second->tree.reset(new IntervalTree<RowSetIntervalTraits>(iter->second->entries));
+  }
+
+  return Status::OK();
+}
+
 void RowSetTree::FindRowSetsIntersectingInterval(const Slice &lower_bound,
                                                  const Slice &upper_bound,
                                                  vector<RowSet *> *rowsets) const {
@@ -239,6 +277,77 @@ void RowSetTree::ForEachRowSetContainingKeys(
       });
 }
 
+void RowSetTree::FindRowSetsIntersectingInterval(const ColumnId& col_id,
+                                                 const Slice &lower_bound,
+                                                 const Slice &upper_bound,
+                                                 std::vector<RowSet *> *rowsets) const {
+  DCHECK(initted_);
+
+  ColumnIdToIndexTreeMap::const_iterator iter = col_id_to_index_tree_.find(col_id);
+  if (iter == col_id_to_index_tree_.end()) return;
+  for (const shared_ptr<RowSet>& rs : iter->second->unbounded_rowsets) {
+    rowsets->push_back(rs.get());
+  }
+ 
+  RowSetWithBounds query;
+  query.min_key = lower_bound.ToString();
+  query.max_key = upper_bound.ToString();
+
+  vector<RowSetWithBounds*> from_tree;
+  from_tree.reserve(all_rowsets_.size());
+  iter->second->tree->FindIntersectingInterval(&query, &from_tree);
+  rowsets->reserve(rowsets->size() + from_tree.size());
+  for (RowSetWithBounds *rs : from_tree) {
+    rowsets->push_back(rs->rowset);
+  }
+}
+
+void RowSetTree::FindRowSetsWithKeyInRange(const ColumnId& col_id,
+                                           const Slice &encoded_key,
+                                           vector<RowSet *> *rowsets) const {
+  DCHECK(initted_);
+
+  ColumnIdToIndexTreeMap::const_iterator iter = col_id_to_index_tree_.find(col_id);
+  if (iter == col_id_to_index_tree_.end()) return;
+  for (const shared_ptr<RowSet>& rs : iter->second->unbounded_rowsets) {
+    rowsets->push_back(rs.get());
+  }
+
+  vector<RowSetWithBounds *> from_tree;
+  from_tree.reserve(all_rowsets_.size());
+  iter->second->tree->FindContainingPoint(encoded_key, &from_tree);
+  rowsets->reserve(rowsets->size() + from_tree.size());
+  for (RowSetWithBounds *rs : from_tree) {
+    rowsets->push_back(rs->rowset);
+  }
+}
+
+void RowSetTree::ForEachRowSetContainingKeys(const ColumnId& col_id,
+                                             const std::vector<Slice>& encoded_keys,
+                                             const std::function<void(RowSet*, int)>& cb) const {
+
+  DCHECK(std::is_sorted(encoded_keys.cbegin(), encoded_keys.cend(), Slice::Comparator()));  
+
+  ColumnIdToIndexTreeMap::const_iterator iter = col_id_to_index_tree_.find(col_id);
+  if (iter == col_id_to_index_tree_.end()) return;
+  for (const shared_ptr<RowSet>& rs : iter->second->unbounded_rowsets) {
+    for (int i = 0; i < encoded_keys.size(); i++) {
+      cb(rs.get(), i);
+    }
+  }
+
+  vector<QueryStruct> queries;
+  queries.resize(encoded_keys.size());
+  for (int i = 0; i < encoded_keys.size(); i++) {
+    queries[i] = {encoded_keys[i], i};
+  }
+
+  iter->second->tree->ForEachIntervalContainingPoints(
+      queries,
+      [&](const QueryStruct& qs, RowSetWithBounds* rs) {
+        cb(rs->rowset, qs.idx);
+      });
+}
 
 RowSetTree::~RowSetTree() {
   STLDeleteElements(&entries_);

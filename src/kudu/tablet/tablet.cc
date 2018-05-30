@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/common/column_predicate.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/row_operations.h"
@@ -250,6 +251,7 @@ Status Tablet::Open() {
 
   shared_ptr<RowSetTree> new_rowset_tree(new RowSetTree());
   CHECK_OK(new_rowset_tree->Reset(rowsets_opened));
+  CHECK_OK(new_rowset_tree->ResetIndexTree(metadata_->schema(), rowsets_opened));
   // now that the current state is loaded, create the new MemRowSet with the next id
   shared_ptr<MemRowSet> new_mrs;
   RETURN_NOT_OK(MemRowSet::Create(next_mrs_id_++, *schema(),
@@ -861,7 +863,8 @@ void Tablet::ApplyRowOperation(WriteTransactionState* tx_state,
   }
 }
 
-void Tablet::ModifyRowSetTree(const RowSetTree& old_tree,
+void Tablet::ModifyRowSetTree(const Schema& schema,
+                              const RowSetTree& old_tree,
                               const RowSetVector& rowsets_to_remove,
                               const RowSetVector& rowsets_to_add,
                               RowSetTree* new_tree) {
@@ -894,6 +897,7 @@ void Tablet::ModifyRowSetTree(const RowSetTree& old_tree,
             std::back_inserter(post_swap));
 
   CHECK_OK(new_tree->Reset(post_swap));
+  CHECK_OK(new_tree->ResetIndexTree(schema, post_swap));
 }
 
 void Tablet::AtomicSwapRowSets(const RowSetVector &old_rowsets,
@@ -907,7 +911,7 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
   DCHECK(component_lock_.is_locked());
 
   shared_ptr<RowSetTree> new_tree(new RowSetTree());
-  ModifyRowSetTree(*components_->rowsets,
+  ModifyRowSetTree(metadata_->schema(), *components_->rowsets,
                    to_remove, to_add, new_tree.get());
 
   components_ = new TabletComponents(components_->memrowset, new_tree);
@@ -992,7 +996,8 @@ Status Tablet::ReplaceMemRowSetUnlocked(RowSetsInCompaction *compaction,
                                   mem_trackers_.tablet_tracker,
                                   &new_mrs));
   shared_ptr<RowSetTree> new_rst(new RowSetTree());
-  ModifyRowSetTree(*components_->rowsets,
+  ModifyRowSetTree(metadata_->schema(),
+                   *components_->rowsets,
                    RowSetVector(), // remove nothing
                    { *old_ms }, // add the old MRS
                    new_rst.get());
@@ -1069,7 +1074,7 @@ Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionState *tx_state,
 
 Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
   DCHECK(key_schema_.KeyTypeEquals(*DCHECK_NOTNULL(tx_state->schema()))) <<
-    "Schema keys cannot be altered(except name)";
+    "Schema keys cannot be altered(except name and index)";
 
   // Prevent any concurrent flushes. Otherwise, we run into issues where
   // we have an MRS in the rowset tree, and we can't alter its schema
@@ -1262,6 +1267,10 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
     maint_mgr->RegisterOp(undo_delta_block_gc_op.get());
     maintenance_ops_.push_back(undo_delta_block_gc_op.release());
   }
+
+  gscoped_ptr<UpdateIndexOp> update_index_op(new UpdateIndexOp(this));
+  maint_mgr->RegisterOp(update_index_op.get());
+  maintenance_ops_.push_back(update_index_op.release());
 }
 
 void Tablet::UnregisterMaintenanceOps() {
@@ -1572,6 +1581,16 @@ Status Tablet::DebugDump(vector<string> *lines) {
   return Status::OK();
 }
 
+bool Tablet::HasIndexColumnInPredicates(const ScanSpec *spec) const {
+  for (const auto& col_pred : spec->predicates()) {
+    //  如果ColumnPredicate中的ColumnSchema是完整的，则直接使用is_indexed接口。
+    if (col_pred.second.column().is_indexed()) return true;
+    //int idx = schema()->find_column(col_pred.first);
+    //if (schema()->column(idx).is_indexed()) return true;
+  }
+  return false;
+}
+
 Status Tablet::CaptureConsistentIterators(
   const Schema *projection,
   const MvccSnapshot &snap,
@@ -1623,6 +1642,141 @@ Status Tablet::CaptureConsistentIterators(
 
   // Swap results into the parameters.
   ret.swap(*iters);
+  return Status::OK();
+}
+
+Status Tablet::CaptureConsistentIteratorsByIndex(const Schema *projection,
+                                                 const MvccSnapshot &snap,
+                                                 const ScanSpec *spec,
+                                                 OrderMode order,
+                                                 vector<std::shared_ptr<RowwiseIterator> > *iters) const {
+  // Lock the component.
+  shared_lock<rw_spinlock> l(component_lock_);
+
+  // Cull rowsets in the case of key-range queries.
+  vector<RowSet*> key_rowsets;
+  if (spec != nullptr && spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
+    components_->rowsets->FindRowSetsIntersectingInterval(
+        spec->lower_bound_key()->encoded_key(),
+        spec->exclusive_upper_bound_key()->encoded_key(),
+        &key_rowsets);
+  } else {
+    // Skip collecting all of the rowsets.
+  }
+
+  // Cull rowsets in the case of predicate which has index.
+  vector<RowSet*> index_rowsets;
+  for (const auto& col_pred : spec->predicates()) {
+    int idx = schema()->find_column(col_pred.first);
+    if (!schema()->column(idx).is_indexed()) continue;
+
+    vector<RowSet*> rowsets;
+    const ColumnId& col_id = schema()->column_id(idx);
+    RETURN_NOT_OK(CaptureRowsetsByColumnPredicate(col_id, col_pred.second, &rowsets));
+
+    if (index_rowsets.empty()) {
+      index_rowsets = std::move(rowsets);
+      continue;
+    }
+
+    vector<RowSet*> tmp;
+    std::sort(rowsets.begin(), rowsets.end());
+    std::sort(index_rowsets.begin(), index_rowsets.end());
+    std::set_intersection(rowsets.begin(), rowsets.end(), 
+                          index_rowsets.begin(), index_rowsets.end(),
+                          back_inserter(tmp));
+    index_rowsets = std::move(tmp);
+    if (index_rowsets.empty()) break;
+  }
+
+  // Get intersection of key_rowsets and index_rowsets.
+  vector<RowSet*> ret_rowsets;
+  if (key_rowsets.empty()) {
+    ret_rowsets = std::move(index_rowsets);
+  } else if (index_rowsets.empty()) {
+    // If the index_rowsets is empty, there is no suitable rowset.
+  } else {
+    std::sort(key_rowsets.begin(), key_rowsets.end());
+    std::sort(index_rowsets.begin(), index_rowsets.end());
+    std::set_intersection(key_rowsets.begin(), key_rowsets.end(),
+                          index_rowsets.begin(), index_rowsets.end(),
+                          back_inserter(ret_rowsets));
+  }
+
+  // Grab rowset iterators.
+  vector<shared_ptr<RowwiseIterator> > ret;
+  for (const RowSet* rs : ret_rowsets) {
+    gscoped_ptr<RowwiseIterator> rs_it;
+    RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, order, &rs_it),
+                          Substitute("Could not create iterator for rowset $0",
+                          rs->ToString()));
+    ret.push_back(shared_ptr<RowwiseIterator>(rs_it.release()));
+  }
+
+  // Grab the memrowset iterator.
+  gscoped_ptr<RowwiseIterator> ms_iter;
+  RETURN_NOT_OK(components_->memrowset->NewRowIterator(projection, snap, order, &ms_iter));
+  ret.push_back(shared_ptr<RowwiseIterator>(ms_iter.release()));
+
+  // Swap results into the parameters.
+  ret.swap(*iters);
+  return Status::OK();
+}
+
+Status Tablet::CaptureRowsetsByColumnPredicate(const ColumnId& col_id,
+                                               const ColumnPredicate& predicate,
+                                               vector<RowSet*>* rowsets) const {
+  const RowSetVector& all_rowsets = components_->rowsets->all_rowsets();
+  const TypeInfo* type_info = schema()->column_by_id(col_id).type_info();
+
+  switch (predicate.predicate_type())
+  {
+  case PredicateType::Range:
+    {
+      if (predicate.raw_lower() && predicate.raw_upper()) {
+        Slice lower(reinterpret_cast<const uint8_t*>(predicate.raw_lower()), type_info->size());
+        Slice upper(reinterpret_cast<const uint8_t*>(predicate.raw_upper()), type_info->size());
+        components_->rowsets->FindRowSetsIntersectingInterval(col_id, lower, upper, rowsets);
+      } else {
+        // TODO: we could support open-ended intervals later.
+        /*Slice key(predicate.raw_lower()?predicate.raw_lower():predicate.raw_upper(), type_info.size());
+        components_->rowsets->FindRowSetsWithKeyInRange(col_id, key, rowsets);*/
+        for (const std::shared_ptr<RowSet>& rs : all_rowsets) {
+          rowsets->emplace_back(rs.get());
+        }
+      }
+      break;
+    }
+  case PredicateType::Equality:
+    {
+      Slice key(reinterpret_cast<const uint8_t*>(predicate.raw_lower()), type_info->size());
+      components_->rowsets->FindRowSetsWithKeyInRange(col_id, key, rowsets);
+      break;
+    }
+  case PredicateType::InList:
+    {
+      std::vector<Slice> keys;
+      for (const auto& value : predicate.raw_values()) {
+        keys.push_back(Slice(reinterpret_cast<const uint8_t*>(value), type_info->size()));
+      }
+      std::set<RowSet*> tmp;
+      components_->rowsets->ForEachRowSetContainingKeys(col_id, keys, [&](RowSet* rs, int i) { tmp.insert(rs);});
+      rowsets->insert(rowsets->end(), tmp.begin(), tmp.end());
+      break;
+    }
+  case PredicateType::IsNotNull:
+    {
+      for (const std::shared_ptr<RowSet>& rs : all_rowsets) {
+        rowsets->emplace_back(rs.get());
+      }
+      break;
+    }
+  case PredicateType::IsNull:
+    break;
+  default:
+    break;
+  }
+
   return Status::OK();
 }
 
@@ -2102,8 +2256,11 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(tablet_->GetMappedReadProjection(projection_, &projection_));
 
   vector<shared_ptr<RowwiseIterator>> iters;
-
-  RETURN_NOT_OK(tablet_->CaptureConsistentIterators(&projection_, snap_, spec, order_, &iters));
+  if (!tablet_->HasIndexColumnInPredicates(spec)) {
+    RETURN_NOT_OK(tablet_->CaptureConsistentIterators(&projection_, snap_, spec, order_, &iters));
+  } else {
+    RETURN_NOT_OK(tablet_->CaptureConsistentIteratorsByIndex(&projection_, snap_, spec, order_, &iters));
+  }
 
   switch (order_) {
     case ORDERED:

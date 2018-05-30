@@ -314,5 +314,9 @@ if [ ! -d "$SPARSEHASH_SOURCE" ]; then
   popd
 fi
 
+if [ ! -d "$CROARING_SOURCE" ]; then
+  fetch_and_expand ${CROARING_NAME}.zip
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

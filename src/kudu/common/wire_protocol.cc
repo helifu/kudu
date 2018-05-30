@@ -217,6 +217,9 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
       pb->set_write_default_value(write_value, col_schema.type_info()->size());
     }
   }
+  if (col_schema.is_indexed()) {
+    pb->set_index_name(col_schema.index_name());
+  }
 }
 
 ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
@@ -252,9 +255,14 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
   if (pb.has_cfile_block_size()) {
     attributes.cfile_block_size = pb.cfile_block_size();
   }
+
+  string index_name = "";
+  if (pb.has_index_name()) {
+    index_name = pb.index_name();
+  }
   return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
                       read_default_ptr, write_default_ptr,
-                      attributes);
+                      index_name, attributes);
 }
 
 void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDeltaPB *pb) {
@@ -279,6 +287,12 @@ void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDelta
   if (col_delta.cfile_block_size) {
     pb->set_block_size(*col_delta.cfile_block_size);
   }
+  if (col_delta.index_name) {
+    pb->set_index_name(*col_delta.index_name);
+  }
+  if (col_delta.drop_index) {
+    pb->set_drop_index(true);
+  }
 }
 
 ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb) {
@@ -300,6 +314,12 @@ ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb) {
   }
   if (pb.has_block_size()) {
     col_delta.cfile_block_size = boost::optional<int32_t>(pb.block_size());
+  }
+  if (pb.has_index_name()) {
+    col_delta.index_name = boost::optional<string>(pb.index_name());
+  }
+  if (pb.has_drop_index()) {
+    col_delta.drop_index = boost::optional<bool>(true);
   }
   return col_delta;
 }

@@ -686,3 +686,18 @@ build_sparsehash() {
   rsync -av --delete sparsehash/ $PREFIX/include/sparsehash/
   popd
 }
+
+build_croaring() {
+  CROARING_BDIR=$TP_BUILD_DIR/$CROARING_NAME$MODE_SUFFIX
+  mkdir -p $CROARING_BDIR
+  pushd $CROARING_BDIR
+  CFLAGS="$EXTRA_CFLAGS" \
+    CXXFLAGS="$EXTRA_CXXFLAGS" \
+    cmake \
+    -DCMAKE_BUILD_TYPE=release \
+    -DBUILD_STATIC=ON \
+    -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX \
+    $CROARING_SOURCE
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  popd
+}

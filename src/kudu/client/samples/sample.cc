@@ -63,7 +63,7 @@ static KuduSchema CreateSchema() {
   KuduSchema schema;
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-  b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull()->AddIndex();
   b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->NotNull();
   b.AddColumn("non_null_with_default")->Type(KuduColumnSchema::INT32)->NotNull()
     ->Default(KuduValue::FromInt(12345));
@@ -115,7 +115,7 @@ static Status CreateTable(const shared_ptr<KuduClient>& client,
 static Status AlterTable(const shared_ptr<KuduClient>& client,
                          const string& table_name) {
   KuduTableAlterer* table_alterer = client->NewTableAlterer(table_name);
-  table_alterer->AlterColumn("int_val")->RenameTo("integer_val");
+  table_alterer->AlterColumn("int_val")->RenameTo("integer_val")->AddIndex();
   table_alterer->AddColumn("another_val")->Type(KuduColumnSchema::BOOL);
   table_alterer->DropColumn("string_val");
   Status s = table_alterer->Alter();

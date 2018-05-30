@@ -201,6 +201,17 @@ KuduColumnSpec* KuduColumnSpec::RenameTo(const std::string& new_name) {
   return this;
 }
 
+KuduColumnSpec* KuduColumnSpec::AddIndex(const std::string& index_name) {
+  data_->has_index = true;
+  data_->index_name = index_name;
+  return this;
+}
+
+KuduColumnSpec* KuduColumnSpec::DropIndex() {
+  data_->drop_index = true;
+  return this;
+}
+
 Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
   // Verify that the user isn't trying to use any methods that
   // don't make sense for CREATE.
@@ -210,6 +221,10 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
   }
   if (data_->remove_default) {
     return Status::NotSupported("cannot remove default during CreateTable",
+                                data_->name);
+  }
+  if (data_->drop_index) {
+    return Status::NotSupported("cannot drop an index during CreateTable",
                                 data_->name);
   }
 
@@ -246,8 +261,13 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
     block_size = data_->block_size;
   }
 
+  std::string index_name = "";
+  if (data_->has_index) {
+    index_name = data_->index_name;
+  }
+
   *col = KuduColumnSchema(data_->name, data_->type, nullable,
-                          default_val,
+                          default_val, index_name,
                           KuduColumnStorageAttributes(encoding, compression, block_size));
 
   return Status::OK();
@@ -292,6 +312,18 @@ Status KuduColumnSpec::ToColumnSchemaDelta(ColumnSchemaDelta* col_delta) const {
 
   if (data_->has_block_size) {
     col_delta->cfile_block_size = boost::optional<int32_t>(data_->block_size);
+  }
+
+  if (data_->has_index) {
+    col_delta->index_name = boost::optional<string>(std::move(data_->index_name));
+  }
+
+  if (data_->drop_index) {
+    col_delta->drop_index = boost::optional<bool>(data_->drop_index);
+  }
+
+  if (col_delta->index_name && col_delta->drop_index) {
+    return Status::InvalidArgument("index name set but also removed", data_->name);
   }
 
   return Status::OK();
@@ -444,12 +476,13 @@ KuduColumnSchema::KuduColumnSchema(const std::string &name,
                                    DataType type,
                                    bool is_nullable,
                                    const void* default_value,
+                                   const std::string &index_name,
                                    KuduColumnStorageAttributes attributes) {
   ColumnStorageAttributes attr_private;
   attr_private.encoding = ToInternalEncodingType(attributes.encoding());
   attr_private.compression = ToInternalCompressionType(attributes.compression());
   col_ = new ColumnSchema(name, ToInternalDataType(type), is_nullable,
-                          default_value, default_value, attr_private);
+                          default_value, default_value, index_name, attr_private);
 }
 
 KuduColumnSchema::KuduColumnSchema(const KuduColumnSchema& other)
@@ -555,7 +588,7 @@ KuduColumnSchema KuduSchema::Column(size_t idx) const {
   KuduColumnStorageAttributes attrs(FromInternalEncodingType(col.attributes().encoding),
                                     FromInternalCompressionType(col.attributes().compression));
   return KuduColumnSchema(col.name(), FromInternalDataType(col.type_info()->type()),
-                          col.is_nullable(), col.read_default_value(),
+                          col.is_nullable(), col.read_default_value(), col.index_name(),
                           attrs);
 }
 

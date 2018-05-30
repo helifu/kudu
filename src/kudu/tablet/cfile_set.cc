@@ -124,6 +124,14 @@ Status CFileSet::DoOpen() {
   // Determine the upper and lower key bounds for this CFileSet.
   RETURN_NOT_OK(LoadMinMaxKeys());
 
+  // Open the index blocks.
+  // the reader should always be fully opened, so that we can figure
+  // out where in the rowset tree we belong.
+  if (tablet_schema().has_index()) {
+    RETURN_NOT_OK(CMultiIndexFileReader::Open(rowset_metadata_,
+          parent_mem_tracker_, &index_reader_));
+  }
+
   return Status::OK();
 }
 
@@ -195,6 +203,16 @@ Status CFileSet::GetBounds(string* min_encoded_key,
   return Status::OK();
 }
 
+Status CFileSet::GetColumnBounds(const ColumnId col_id,
+                                 std::string* min_encoded_key,
+                                 std::string* max_encoded_key) const {
+  if (!tablet_schema().has_index()) {
+    return Status::Corruption("no index in CFileSet.");
+  }
+
+  return index_reader_->GetColumnBounds(col_id, min_encoded_key, max_encoded_key);
+}
+
 uint64_t CFileSet::EstimateOnDiskSize() const {
   uint64_t ret = 0;
   for (const auto& e : readers_by_col_id_) {
@@ -260,6 +278,10 @@ Status CFileSet::NewKeyIterator(CFileIterator **key_iter) const {
   return key_index_reader()->NewIterator(key_iter, CFileReader::CACHE_BLOCK);
 }
 
+Status CFileSet::NewIndexIterator(CMultiIndexFileReader::Iterator** index_iter) const {
+  return index_reader_->NewIterator(index_iter);
+}
+
 ////////////////////////////////////////////////////////////
 // Iterator
 ////////////////////////////////////////////////////////////
@@ -319,6 +341,12 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
   // If there is a range predicate on the key column, push that down into an
   // ordinal range.
   RETURN_NOT_OK(PushdownRangeScanPredicate(spec));
+
+  // Setup Index Iterators.
+  RETURN_NOT_OK(CreateIndexIterators());
+
+  // Push down the index bounds.
+  RETURN_NOT_OK(PushdownIndexRangeScanPredicate(spec));
 
   initted_ = true;
 
@@ -389,6 +417,34 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
   return Status::OK();
 }
 
+Status CFileSet::Iterator::CreateIndexIterators() {
+  if (!schema().has_index()) return Status::OK();
+
+  // Create Index Iterator
+  CMultiIndexFileReader::Iterator* iter;
+  RETURN_NOT_OK(base_data_->NewIndexIterator(&iter));
+  index_iter_.reset(iter);
+
+  return Status::OK();
+}
+
+Status CFileSet::Iterator::PushdownIndexRangeScanPredicate(ScanSpec* spec) {
+  if (!schema().has_index()) return Status::OK();
+
+  // Init iterators.
+  RETURN_NOT_OK(index_iter_->Init(projection_, spec));
+
+  rowid_t lower_idx = 0;
+  rowid_t upper_idx = 0;
+  RETURN_NOT_OK(index_iter_->GetBounds(&lower_idx, &upper_idx));
+
+  if (lower_idx == 0 && upper_idx ==0) return Status::OK();
+  lower_bound_idx_ = std::max(lower_bound_idx_, lower_idx);
+  upper_bound_idx_ = std::min(upper_bound_idx_, upper_idx);
+
+  return Status::OK();
+}
+
 void CFileSet::Iterator::Unprepare() {
   prepared_count_ = 0;
   cols_prepared_.assign(col_iters_.size(), false);
@@ -447,6 +503,16 @@ Status CFileSet::Iterator::PrepareColumn(ColumnMaterializationContext *ctx) {
 
 Status CFileSet::Iterator::InitializeSelectionVector(SelectionVector *sel_vec) {
   sel_vec->SetAllTrue();
+
+  // Skip the unnecessary row_idx according to index.
+  if (!schema().has_index()) return Status::OK();
+  SelectionVectorView sel(sel_vec);
+  for (int i = 0; i < sel_vec->nrows(); ++i) {
+    if (!index_iter_->Exist(cur_idx_ + i)) {
+      sel.ClearBit(i);
+    }
+  }
+
   return Status::OK();
 }
 

@@ -51,6 +51,7 @@ class RowChangeList;
 namespace cfile {
 class BloomFileWriter;
 class CFileWriter;
+class CMultiIndexFileWriter;
 }
 
 namespace log {
@@ -116,6 +117,9 @@ class DiskRowSetWriter {
   // this index is written to a new file instead of embedded in the col_* files
   Status InitAdHocIndexWriter();
 
+  // Initializes the secondary index writer.
+  Status InitMultiIndexWriter();
+
   // Return the cfile::Writer responsible for writing the key index.
   // (the ad-hoc writer for composite keys, otherwise the key column writer)
   cfile::CFileWriter *key_index_writer();
@@ -130,6 +134,9 @@ class DiskRowSetWriter {
   gscoped_ptr<MultiColumnWriter> col_writer_;
   gscoped_ptr<cfile::BloomFileWriter> bloom_writer_;
   gscoped_ptr<cfile::CFileWriter> ad_hoc_index_writer_;
+
+  // Index file writer.
+  gscoped_ptr<cfile::CMultiIndexFileWriter> index_writer_;
 
   // The last encoded key written.
   faststring last_encoded_key_;
@@ -327,6 +334,10 @@ class DiskRowSet : public RowSet {
   // See RowSet::GetBounds(...)
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const OVERRIDE;
+
+  virtual Status GetColumnBounds(const ColumnId& col_id,
+                                 std::string* min_encoded_key,
+                                 std::string* max_encoded_key) const OVERRIDE;
 
   // Estimate the number of bytes on-disk for the base data.
   uint64_t EstimateBaseDataDiskSize() const;

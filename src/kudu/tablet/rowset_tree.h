@@ -21,6 +21,8 @@
 #include <vector>
 #include <utility>
 
+#include <boost/container/flat_map.hpp>
+
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/util/status.h"
@@ -64,6 +66,7 @@ class RowSetTree {
 
   RowSetTree();
   Status Reset(const RowSetVector &rowsets);
+  Status ResetIndexTree(const Schema& schema, const RowSetVector& rowsets);
   ~RowSetTree();
 
   // Return all RowSets whose range may contain the given encoded key.
@@ -84,6 +87,18 @@ class RowSetTree {
                                    const std::function<void(RowSet*, int)>& cb) const;
 
   void FindRowSetsIntersectingInterval(const Slice &lower_bound,
+                                       const Slice &upper_bound,
+                                       std::vector<RowSet *> *rowsets) const;
+
+  // Find rowsets according to index predicate.
+  void FindRowSetsWithKeyInRange(const ColumnId& col_id,
+                                 const Slice& encoded_key,
+                                 std::vector<RowSet *> *rowsets) const;
+  void ForEachRowSetContainingKeys(const ColumnId& col_id,
+                                   const std::vector<Slice>& encoded_keys,
+                                   const std::function<void(RowSet*, int)>& cb) const;
+  void FindRowSetsIntersectingInterval(const ColumnId& col_id,
+                                       const Slice &lower_bound,
                                        const Slice &upper_bound,
                                        std::vector<RowSet *> *rowsets) const;
 
@@ -125,6 +140,16 @@ class RowSetTree {
   // These have to be consulted for every access, so are not
   // stored in the interval tree.
   RowSetVector unbounded_rowsets_;
+
+  // Secondary Index.
+  struct IndexTreeStruct {
+    gscoped_ptr<IntervalTree<RowSetIntervalTraits>> tree;
+    std::vector<RSEndpoint> endpoints;
+    std::vector<RowSetWithBounds*> entries;
+    RowSetVector unbounded_rowsets;
+  };
+  typedef boost::container::flat_map<ColumnId, std::unique_ptr<IndexTreeStruct>> ColumnIdToIndexTreeMap;
+  ColumnIdToIndexTreeMap col_id_to_index_tree_;
 
   bool initted_;
 };

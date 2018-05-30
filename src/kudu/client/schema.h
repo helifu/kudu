@@ -156,12 +156,15 @@ class KUDU_EXPORT KuduColumnSchema {
   ///   Whether the column is nullable.
   /// @param [in] default_value
   ///   Default value for the column.
+  /// @param [in] index
+  ///   The name of the index for the column.
   /// @param [in] attributes
   ///   Column storage attributes.
   KuduColumnSchema(const std::string &name,
                    DataType type,
                    bool is_nullable = false,
                    const void* default_value = NULL,
+                   const std::string &index = "",
                    KuduColumnStorageAttributes attributes = KuduColumnStorageAttributes())
       ATTRIBUTE_DEPRECATED("use KuduSchemaBuilder instead");
 
@@ -336,6 +339,20 @@ class KUDU_EXPORT KuduColumnSpec {
   ///   The new name for the column.
   /// @return Pointer to the modified object.
   KuduColumnSpec* RenameTo(const std::string& new_name);
+
+  /// Add index for the column.
+  ///
+  /// @param [in] index_name
+  ///   The index name for the column.
+  /// @return Pointer to the modified object.
+  KuduColumnSpec* AddIndex(const std::string& index_name);
+
+  /// Drop index for the column.
+  ///
+  /// @note
+  ///
+  /// @return Pointer to the modified object.
+  KuduColumnSpec* DropIndex();
   ///@}
 
  private:

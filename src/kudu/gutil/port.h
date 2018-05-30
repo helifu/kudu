@@ -645,7 +645,7 @@ inline void *aligned_malloc(size_t size, int minimum_alignment) {
 #endif
 }
 
-inline void aligned_free(void *aligned_memory) {
+inline void aligned_free(char *aligned_memory) {
   free(aligned_memory);
 }
 

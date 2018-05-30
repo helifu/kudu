@@ -91,6 +91,21 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
     undo_delta_blocks_.push_back(BlockId::FromPB(undo_delta_pb.block()));
   }
 
+  // Load index files
+  for (const IndexDataPB& index_pb : pb.indexes()) {
+    ColumnId col_id(index_pb.column_id());
+    BlockIdPair one;
+    one.first.SetId(index_pb.key_block().id());
+    one.second.SetId(index_pb.bitmap_block().id());
+    index_blocks_by_col_id_[col_id] = std::move(one);
+  }
+
+  // Calculate index bit
+  for (const ColumnIdToBlockIdPairMap::value_type& e : index_blocks_by_col_id_) {
+    ColumnId col_id = e.first;
+    rowset_index_bit_ += (1 << col_id);
+  }
+
   initted_ = true;
   return Status::OK();
 }
@@ -132,6 +147,19 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   if (!adhoc_index_block_.IsNull()) {
     adhoc_index_block_.CopyToPB(pb->mutable_adhoc_index_block());
   }
+
+  // Write Index Files
+  if (!index_blocks_by_col_id_.empty()) {
+    for (const ColumnIdToBlockIdPairMap::value_type& e : index_blocks_by_col_id_) {
+      ColumnId col_id = e.first;
+      const BlockIdPair& one = e.second;
+
+      IndexDataPB* index = pb->add_indexes();
+      index->set_column_id(col_id);
+      one.first.CopyToPB(index->mutable_key_block());
+      one.second.CopyToPB(index->mutable_bitmap_block());
+    }
+  }
 }
 
 const string RowSetMetadata::ToString() const {
@@ -143,6 +171,13 @@ void RowSetMetadata::SetColumnDataBlocks(const std::map<ColumnId, BlockId>& bloc
   new_map.shrink_to_fit();
   std::lock_guard<LockType> l(lock_);
   blocks_by_col_id_ = std::move(new_map);
+}
+
+void RowSetMetadata::SetIndexDataBlocks(const std::map<ColumnId, BlockIdPair>& blocks_by_col_id) {
+  ColumnIdToBlockIdPairMap new_map(blocks_by_col_id.begin(), blocks_by_col_id.end());
+  new_map.shrink_to_fit();
+  std::lock_guard<LockType> l(lock_);
+  index_blocks_by_col_id_ = std::move(new_map);
 }
 
 Status RowSetMetadata::CommitRedoDeltaDataBlock(int64_t dms_id,
@@ -256,6 +291,13 @@ vector<BlockId> RowSetMetadata::GetAllBlocks() {
     blocks.push_back(bloom_block_);
   }
   AppendValuesFromMap(blocks_by_col_id_, &blocks);
+
+  if (!index_blocks_by_col_id_.empty()) {
+    for (const ColumnIdToBlockIdPairMap::value_type& e : index_blocks_by_col_id_) {
+      blocks.push_back(e.second.first);
+      blocks.push_back(e.second.second);
+    }
+  }
 
   blocks.insert(blocks.end(),
                 undo_delta_blocks_.begin(), undo_delta_blocks_.end());

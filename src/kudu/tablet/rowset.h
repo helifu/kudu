@@ -107,6 +107,14 @@ class RowSet {
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const = 0;
 
+  // Return the bounds of specified column for this RowSet. 
+  //
+  // In the case that the rowset is still mutable (eg MemRowSet), this may
+  // return Status::NotImplemented.
+  virtual Status GetColumnBounds(const ColumnId& col_id,
+                                 std::string* min_encoded_key,
+                                 std::string* max_encoded_key) const = 0;
+
   // Return a displayable string for this rowset.
   virtual string ToString() const = 0;
 
@@ -328,6 +336,10 @@ class DuplicatingRowSet : public RowSet {
 
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const OVERRIDE;
+
+  virtual Status GetColumnBounds(const ColumnId& col_id,
+                                 std::string* min_encoded_key,
+                                 std::string* max_encoded_key) const OVERRIDE;
 
   uint64_t EstimateOnDiskSize() const OVERRIDE;
 

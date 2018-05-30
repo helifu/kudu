@@ -249,9 +249,11 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       tombstone_last_logged_opid_(MinimumOpId()),
       num_flush_pins_(0),
       needs_flush_(false),
-      pre_flush_callback_(Bind(DoNothingStatusClosure)) {
+      pre_flush_callback_(Bind(DoNothingStatusClosure)),
+      tablet_index_bit_(0) {
   CHECK(schema_->has_column_ids());
   CHECK_GT(schema_->num_key_columns(), 0);
+  UpdateTabletIndexBit();
 }
 
 TabletMetadata::~TabletMetadata() {
@@ -631,6 +633,7 @@ void TabletMetadata::SetSchemaUnlocked(gscoped_ptr<Schema> new_schema, uint32_t 
     old_schemas_.push_back(old_schema);
   }
   schema_version_ = version;
+  UpdateTabletIndexBit();
 }
 
 void TabletMetadata::SetTableName(const string& table_name) {
@@ -657,6 +660,14 @@ void TabletMetadata::set_tablet_data_state(TabletDataState state) {
 
 string TabletMetadata::LogPrefix() const {
   return Substitute("T $0 P $1: ", tablet_id_, fs_manager_->uuid());
+}
+
+void TabletMetadata::UpdateTabletIndexBit() {
+  tablet_index_bit_ = 0;
+  for (int i = 0; i < schema_->num_columns(); ++i) {
+    if (!schema_->column(i).is_indexed()) continue;
+    tablet_index_bit_ += (1 << schema_->column_id(i));
+  }
 }
 
 TabletDataState TabletMetadata::tablet_data_state() const {

@@ -68,6 +68,8 @@ class RowSetMetadata {
   // We use a flat_map to save memory, since there are lots of these metadata
   // objects.
   typedef boost::container::flat_map<ColumnId, BlockId> ColumnIdToBlockIdMap;
+  typedef std::pair<BlockId, BlockId> BlockIdPair;
+  typedef boost::container::flat_map<ColumnId, BlockIdPair> ColumnIdToBlockIdPairMap;
 
   // Create a new RowSetMetadata
   static Status CreateNew(TabletMetadata* tablet_metadata,
@@ -102,6 +104,7 @@ class RowSetMetadata {
   }
 
   void SetColumnDataBlocks(const std::map<ColumnId, BlockId>& blocks_by_col_id);
+  void SetIndexDataBlocks(const std::map<ColumnId, BlockIdPair>& blocks_by_col_id);
 
   Status CommitRedoDeltaDataBlock(int64_t dms_id, const BlockId& block_id);
 
@@ -130,6 +133,11 @@ class RowSetMetadata {
   ColumnIdToBlockIdMap GetColumnBlocksById() const {
     std::lock_guard<LockType> l(lock_);
     return blocks_by_col_id_;
+  }
+
+  ColumnIdToBlockIdPairMap GetIndexBlocksById() const {
+    std::lock_guard<LockType> l(lock_);
+    return index_blocks_by_col_id_;
   }
 
   vector<BlockId> redo_delta_blocks() const {
@@ -185,7 +193,8 @@ class RowSetMetadata {
   explicit RowSetMetadata(TabletMetadata *tablet_metadata)
     : tablet_metadata_(tablet_metadata),
       initted_(false),
-      last_durable_redo_dms_id_(kNoDurableMemStore) {
+      last_durable_redo_dms_id_(kNoDurableMemStore),
+      rowset_index_bit_(0) {
   }
 
   RowSetMetadata(TabletMetadata *tablet_metadata,
@@ -193,7 +202,8 @@ class RowSetMetadata {
     : tablet_metadata_(DCHECK_NOTNULL(tablet_metadata)),
       initted_(true),
       id_(id),
-      last_durable_redo_dms_id_(kNoDurableMemStore) {
+      last_durable_redo_dms_id_(kNoDurableMemStore),
+      rowset_index_bit_(0) {
   }
 
   Status InitFromPB(const RowSetDataPB& pb);
@@ -214,6 +224,12 @@ class RowSetMetadata {
   std::vector<BlockId> undo_delta_blocks_;
 
   int64_t last_durable_redo_dms_id_;
+
+  // Map of ColumnId to BlockIdPair.
+  ColumnIdToBlockIdPairMap index_blocks_by_col_id_;
+
+  // Bitmap for ColumnId.
+  uint32_t rowset_index_bit_;
 
   DISALLOW_COPY_AND_ASSIGN(RowSetMetadata);
 };

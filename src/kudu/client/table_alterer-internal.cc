@@ -99,7 +99,9 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
             !s.spec->data_->remove_default &&
             !s.spec->data_->has_encoding &&
             !s.spec->data_->has_compression &&
-            !s.spec->data_->has_block_size) {
+            !s.spec->data_->has_block_size &&
+            !s.spec->data_->has_index &&
+            !s.spec->data_->drop_index) {
           return Status::InvalidArgument("no alter operation specified",
                                          s.spec->data_->name);
         }

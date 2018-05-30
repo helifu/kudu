@@ -154,6 +154,17 @@ class UndoDeltaBlockGCOp : public TabletOpBase {
   DISALLOW_COPY_AND_ASSIGN(UndoDeltaBlockGCOp);
 };
 
+// MaintenanceOp for update secondary index.
+class UpdateIndexOp: public TabletOpBase {
+public:
+    explicit UpdateIndexOp(Tablet* tablet);
+    virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE;
+    virtual bool Prepare() OVERRIDE;
+    virtual void Perform() OVERRIDE;
+    virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE;
+    virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
+private:
+};
 
 } // namespace tablet
 } // namespace kudu

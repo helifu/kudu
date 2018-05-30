@@ -308,5 +308,35 @@ std::string UndoDeltaBlockGCOp::LogPrefix() const {
   return tablet_->LogPrefix();
 }
 
+////////////////////////////////////////////////////////////
+// UpdateIndexOp
+////////////////////////////////////////////////////////////
+
+UpdateIndexOp::UpdateIndexOp(Tablet* tablet)
+  : TabletOpBase(Substitute("UpdateIndexOp($0)", tablet->tablet_id()),
+                 MaintenanceOp::HIGH_IO_USAGE, tablet) {
+}
+
+void UpdateIndexOp::UpdateStats(MaintenanceOpStats* stats) {
+
+}
+
+bool UpdateIndexOp::Prepare() {
+
+  return false;
+}
+
+void UpdateIndexOp::Perform() {
+
+}
+
+scoped_refptr<Histogram> UpdateIndexOp::DurationHistogram() const {
+  return tablet_->metrics()->update_index_duration;
+}
+
+scoped_refptr<AtomicGauge<uint32_t>> UpdateIndexOp::RunningGauge() const {
+  return tablet_->metrics()->update_index_running;
+}
+
 } // namespace tablet
 } // namespace kudu

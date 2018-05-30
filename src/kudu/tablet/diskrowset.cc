@@ -28,6 +28,7 @@
 
 #include "kudu/cfile/bloomfile.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/cfile/indexfile.h"
 #include "kudu/cfile/type_encodings.h"
 #include "kudu/common/generic_iterators.h"
 #include "kudu/common/iterator.h"
@@ -100,6 +101,11 @@ Status DiskRowSetWriter::Open() {
     RETURN_NOT_OK(InitAdHocIndexWriter());
   }
 
+  // Open multi index writer
+  if (schema_->has_index()) {
+    RETURN_NOT_OK(InitMultiIndexWriter());
+  }
+
   return Status::OK();
 }
 
@@ -152,6 +158,15 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
 
 }
 
+Status DiskRowSetWriter::InitMultiIndexWriter() {
+  CHECK(!schema_->has_index());
+
+  FsManager* fs = rowset_metadata_->fs_manager();
+  index_writer_.reset(new cfile::CMultiIndexFileWriter(fs, schema_));
+  RETURN_NOT_OK(index_writer_->Open());
+  return Status::OK();
+}
+
 Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
   DCHECK_EQ(block.schema().num_columns(), schema_->num_columns());
   CHECK(!finished_);
@@ -166,6 +181,11 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
 
   // Write the batch to each of the columns
   RETURN_NOT_OK(col_writer_->AppendBlock(block));
+
+  // Write the batch to index data
+  if (schema_->has_index()) {
+    RETURN_NOT_OK(index_writer_->AppendBlock(block));
+  }
 
 #ifndef NDEBUG
     faststring prev_key;
@@ -236,6 +256,17 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   col_writer_->GetFlushedBlocksByColumnId(&flushed_blocks);
   rowset_metadata_->SetColumnDataBlocks(flushed_blocks);
 
+  // Finish Index data.
+  if (schema_->has_index()) {
+    // Finish writing the index data.
+    RETURN_NOT_OK(index_writer_->FinishAndReleaseBlocks(closer));
+
+    // Put the index data blocks in the metadata.
+    std::map<ColumnId, std::pair<BlockId, BlockId> > index_flushed_blocks;
+    index_writer_->GetFlushedBlocksByColumnId(&index_flushed_blocks);
+    rowset_metadata_->SetIndexDataBlocks(index_flushed_blocks);
+  }
+
   if (ad_hoc_index_writer_ != nullptr) {
     Status s = ad_hoc_index_writer_->FinishAndReleaseBlock(closer);
     if (!s.ok()) {
@@ -272,6 +303,13 @@ size_t DiskRowSetWriter::written_size() const {
 
   if (ad_hoc_index_writer_) {
     size += ad_hoc_index_writer_->written_size();
+  }
+
+  // Because the index data is in the memory before flush,
+  // so the size here has two values: 
+  //    zero before flush | non-zero after flush.
+  if (index_writer_) {
+    size += index_writer_->written_size();
   }
 
   return size;
@@ -672,6 +710,14 @@ Status DiskRowSet::GetBounds(std::string* min_encoded_key,
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_);
   return base_data_->GetBounds(min_encoded_key, max_encoded_key);
+}
+
+Status DiskRowSet::GetColumnBounds(const ColumnId& col_id,
+                                   std::string* min_encoded_key,
+                                   std::string* max_encoded_key) const {
+  DCHECK(open_);
+  shared_lock<rw_spinlock> l(component_lock_);
+  return base_data_->GetColumnBounds(col_id, min_encoded_key, max_encoded_key);
 }
 
 uint64_t DiskRowSet::EstimateBaseDataDiskSize() const {

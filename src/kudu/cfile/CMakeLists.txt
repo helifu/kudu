@@ -23,7 +23,8 @@ PROTOBUF_GENERATE_CPP(
 set(CFILE_PROTO_LIBS
   kudu_common_proto
   pb_util_proto
-  protobuf)
+  protobuf
+  roaring)
 ADD_EXPORTABLE_LIBRARY(cfile_proto
   SRCS ${CFILE_PROTO_SRCS}
   DEPS ${CFILE_PROTO_LIBS}
@@ -43,6 +44,7 @@ add_library(cfile
   cfile_writer.cc
   index_block.cc
   index_btree.cc
+  indexfile.cc
   type_encodings.cc)
 
 target_link_libraries(cfile

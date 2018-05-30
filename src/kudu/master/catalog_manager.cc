@@ -1223,8 +1223,13 @@ Status ValidateClientSchema(const boost::optional<string>& name,
     RETURN_NOT_OK_PREPEND(ValidateIdentifier(name.get()), "invalid table name");
   }
   for (int i = 0; i < schema.num_columns(); i++) {
-    RETURN_NOT_OK_PREPEND(ValidateIdentifier(schema.column(i).name()),
+    const ColumnSchema& col_schema = schema.column(i);
+    RETURN_NOT_OK_PREPEND(ValidateIdentifier(col_schema.name()),
                           "invalid column name");
+    if (col_schema.is_indexed()) {
+      RETURN_NOT_OK_PREPEND(ValidateIdentifier(col_schema.index_name()),
+                            "invalid index name");
+    }
   }
   if (schema.num_key_columns() <= 0) {
     return Status::InvalidArgument("must specify at least one key column");

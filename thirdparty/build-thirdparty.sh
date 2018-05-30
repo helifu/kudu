@@ -93,6 +93,7 @@ else
       "boost")        F_BOOST=1 ;;
       "breakpad")     F_BREAKPAD=1 ;;
       "sparsehash")   F_SPARSEHASH=1 ;;
+      "croaring")     F_CROARING=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -319,6 +320,10 @@ if [ -n "$F_UNINSTRUMENTED" -o -n "$F_BREAKPAD" ]; then
   build_breakpad
 fi
 
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CROARING" ]; then
+  build_croaring
+fi
+
 restore_env
 
 # If we're on macOS best to exit here, otherwise single dependency builds will try to
@@ -484,6 +489,10 @@ fi
 
 if [ -n "$F_TSAN" -o -n "$F_BREAKPAD" ]; then
   build_breakpad
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_CROARING" ]; then
+  build_croaring
 fi
 
 restore_env

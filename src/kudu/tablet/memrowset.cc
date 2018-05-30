@@ -306,6 +306,12 @@ Status MemRowSet::GetBounds(string *min_encoded_key,
   return Status::NotSupported("");
 }
 
+Status MemRowSet::GetColumnBounds(const ColumnId& col_id,
+                                  std::string* min_encoded_key,
+                                  std::string* max_encoded_key) const {
+  return Status::NotSupported("");
+}
+
 // Virtual interface allows two possible row projector implementations
 class MemRowSet::Iterator::MRSRowProjector {
  public:

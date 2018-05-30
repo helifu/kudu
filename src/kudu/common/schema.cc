@@ -76,6 +76,15 @@ Status ColumnSchema::ApplyDelta(const ColumnSchemaDelta& col_delta) {
     write_default_ = nullptr;
   }
 
+  // Create index or Rename index name.
+  if (col_delta.index_name) {
+    index_name_ = *col_delta.index_name;
+  }
+  // Drop index whatever there is an index or not.
+  if (col_delta.drop_index) {
+    index_name_ = "";
+  }
+
   if (col_delta.encoding) {
     attributes_.encoding = *col_delta.encoding;
   }
@@ -97,9 +106,10 @@ string ColumnSchema::ToString() const {
 }
 
 string ColumnSchema::TypeToString() const {
-  return strings::Substitute("$0 $1",
+  return strings::Substitute("$0 $1 $2",
                              type_info_->name(),
-                             is_nullable_ ? "NULLABLE" : "NOT NULL");
+                             is_nullable_ ? "NULLABLE" : "NOT NULL",
+                             index_name_.length()>0 ? "INDEX" : "NOT INDEX");
 }
 
 size_t ColumnSchema::memory_footprint_excluding_this() const {
@@ -145,6 +155,7 @@ void Schema::CopyFrom(const Schema& other) {
   }
 
   has_nullables_ = other.has_nullables_;
+  has_indexed_ = other.has_indexed_;
 }
 
 void Schema::swap(Schema& other) {
@@ -155,6 +166,7 @@ void Schema::swap(Schema& other) {
   name_to_index_.swap(other.name_to_index_);
   id_to_index_.swap(other.id_to_index_);
   std::swap(has_nullables_, other.has_nullables_);
+  std::swap(has_indexed_, other.has_indexed_);
 }
 
 Status Schema::Reset(const vector<ColumnSchema>& cols,
@@ -217,9 +229,13 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
     id_to_index_.set(ids[i], i);
   }
 
-  // Determine whether any column is nullable
+  // Determine whether any column is nullable & indexed.
   has_nullables_ = false;
+  has_indexed_ = false;
   for (const ColumnSchema& col : cols_) {
+    if (col.is_indexed()) {
+      has_indexed_ = true;
+    }
     if (col.is_nullable()) {
       has_nullables_ = true;
       break;

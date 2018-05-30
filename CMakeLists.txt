@@ -966,6 +966,13 @@ if (NOT APPLE)
     SHARED_LIB "${DL_LIB_PATH}")
 endif()
 
+## CRoaring
+find_package(CRoaring REQUIRED)
+include_directories(SYSTEM ${CROARING_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(roaring
+  STATIC_LIB "${CROARING_STATIC_LIB}"
+  SHARED_LIB "${CROARING_SHARED_LIB}")
+
 ## Kerberos binaries (kinit, kadmin, etc).
 if (NOT NO_TESTS)
   ## We rely on the Kerberos binaries for testing security.

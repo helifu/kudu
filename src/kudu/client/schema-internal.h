@@ -56,7 +56,9 @@ class KuduColumnSpec::Data {
         has_default(false),
         default_val(NULL),
         remove_default(false),
-        has_rename_to(false) {
+        has_rename_to(false),
+        has_index(false),
+        drop_index(false) {
   }
 
   ~Data() {
@@ -91,6 +93,11 @@ class KuduColumnSpec::Data {
   // For ALTER
   bool has_rename_to;
   std::string rename_to;
+
+  // For Alter
+  bool has_index;
+  std::string index_name;
+  bool drop_index;
 };
 
 } // namespace client

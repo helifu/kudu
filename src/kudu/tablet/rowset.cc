@@ -207,6 +207,16 @@ Status DuplicatingRowSet::GetBounds(string* min_encoded_key,
   return Status::OK();
 }
 
+Status DuplicatingRowSet::GetColumnBounds(const ColumnId& col_id,
+                                          std::string* min_encoded_key,
+                                          std::string* max_encoded_key) const {
+  
+  
+  
+  
+  return Status::OK();
+}
+
 uint64_t DuplicatingRowSet::EstimateOnDiskSize() const {
   uint64_t size = 0;
   for (const shared_ptr<RowSet> &rs : new_rowsets_) {
