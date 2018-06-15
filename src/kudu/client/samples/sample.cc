@@ -63,7 +63,7 @@ static KuduSchema CreateSchema() {
   KuduSchema schema;
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
-  b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull()->AddIndex();
+  b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
   b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->NotNull();
   b.AddColumn("non_null_with_default")->Type(KuduColumnSchema::INT32)->NotNull()
     ->Default(KuduValue::FromInt(12345));
@@ -115,9 +115,7 @@ static Status CreateTable(const shared_ptr<KuduClient>& client,
 static Status AlterTable(const shared_ptr<KuduClient>& client,
                          const string& table_name) {
   KuduTableAlterer* table_alterer = client->NewTableAlterer(table_name);
-  table_alterer->AlterColumn("int_val")->RenameTo("integer_val")->AddIndex();
-  table_alterer->AddColumn("another_val")->Type(KuduColumnSchema::BOOL);
-  table_alterer->DropColumn("string_val");
+  table_alterer->AlterColumn("s_nationkey")->AddIndex("s_nationkey_index");
   Status s = table_alterer->Alter();
   delete table_alterer;
   return s;
@@ -266,7 +264,7 @@ int main(int argc, char* argv[]) {
   }
   const string master_host = argv[1];
 
-  const string kTableName = "test_table";
+  const string kTableName = "impala::index.supplier_index";
 
   // Enable verbose debugging for the client library.
   kudu::client::SetVerboseLogLevel(2);
@@ -279,23 +277,24 @@ int main(int argc, char* argv[]) {
   // Disable the verbose logging.
   kudu::client::SetVerboseLogLevel(0);
 
-  // Create a schema.
-  KuduSchema schema(CreateSchema());
-  KUDU_LOG(INFO) << "Created a schema";
+  //// Create a schema.
+  //KuduSchema schema(CreateSchema());
+  //KUDU_LOG(INFO) << "Created a schema";
 
-  // Create a table with that schema.
-  bool exists;
-  KUDU_CHECK_OK(DoesTableExist(client, kTableName, &exists));
-  if (exists) {
-    client->DeleteTable(kTableName);
-    KUDU_LOG(INFO) << "Deleting old table before creating new one";
-  }
-  KUDU_CHECK_OK(CreateTable(client, kTableName, schema, 10));
-  KUDU_LOG(INFO) << "Created a table";
+  //// Create a table with that schema.
+  //bool exists;
+  //KUDU_CHECK_OK(DoesTableExist(client, kTableName, &exists));
+  //if (exists) {
+  //  client->DeleteTable(kTableName);
+  //  KUDU_LOG(INFO) << "Deleting old table before creating new one";
+  //}
+  //KUDU_CHECK_OK(CreateTable(client, kTableName, schema, 10));
+  //KUDU_LOG(INFO) << "Created a table";
 
   // Alter the table.
   KUDU_CHECK_OK(AlterTable(client, kTableName));
   KUDU_LOG(INFO) << "Altered a table";
+  return 0;
 
   // Insert some rows into the table.
   shared_ptr<KuduTable> table;

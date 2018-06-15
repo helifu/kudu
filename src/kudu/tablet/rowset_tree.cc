@@ -30,6 +30,7 @@
 #include "kudu/util/interval_tree.h"
 #include "kudu/util/interval_tree-inl.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/hexdump.h"
 
 using std::vector;
 using std::shared_ptr;
@@ -164,23 +165,28 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
   return Status::OK();
 }
 
-Status RowSetTree::ResetIndexTree(const Schema& schema, const RowSetVector &rowsets) {
+Status RowSetTree::ResetIndexTree(const Schema& schema, const RowSetVector& rowsets) {
   CHECK(initted_);
+  LOG(INFO) << "ResetIndexTree: " << schema.ToString();
+  col_id_to_index_tree_.clear();
   for (int i = 0; i < schema.num_columns(); ++i) {
     if (!schema.column(i).is_indexed()) continue;
 
     const ColumnId& col_id = schema.column_id(i);
     ColumnIdToIndexTreeMap::iterator iter = col_id_to_index_tree_.find(col_id);
-    if (iter == col_id_to_index_tree_.end()) {
-      std::unique_ptr<IndexTreeStruct> one(new IndexTreeStruct());
-      iter = col_id_to_index_tree_.insert(ColumnIdToIndexTreeMap::value_type(col_id, std::move(one))).first;
+    if (iter != col_id_to_index_tree_.end()) {
+      LOG(FATAL) << "why there is already duplicate col_id:" << col_id << "?";
+      return Status::RuntimeError("duplicate col_id");
     }
 
+    std::unique_ptr<IndexTreeStruct> one(new IndexTreeStruct());
+    iter = col_id_to_index_tree_.insert(ColumnIdToIndexTreeMap::value_type(col_id, std::move(one))).first;
     for (const shared_ptr<RowSet>& rs : rowsets) {
       gscoped_ptr<RowSetWithBounds> entry(new RowSetWithBounds());
       entry->rowset = rs.get();
       Status s = rs->GetColumnBounds(col_id, &(entry->min_key), &(entry->max_key));
       if (s.IsNotSupported()) {
+        LOG(INFO) << "can not get the bounds for " << rs->ToString();
         iter->second->unbounded_rowsets.push_back(rs);
         continue;
       } else if (!s.ok()) {
@@ -189,7 +195,7 @@ Status RowSetTree::ResetIndexTree(const Schema& schema, const RowSetVector &rows
                      << s.ToString();
         return s;
       }
-
+      LOG(INFO) << "get the bounds for " << rs->ToString();
       iter->second->endpoints.push_back(RSEndpoint(entry->rowset, START, entry->min_key));
       iter->second->endpoints.push_back(RSEndpoint(entry->rowset, STOP,  entry->max_key));
       iter->second->entries.push_back(entry.release());
@@ -284,7 +290,10 @@ void RowSetTree::FindRowSetsIntersectingInterval(const ColumnId& col_id,
   DCHECK(initted_);
 
   ColumnIdToIndexTreeMap::const_iterator iter = col_id_to_index_tree_.find(col_id);
-  if (iter == col_id_to_index_tree_.end()) return;
+  if (iter == col_id_to_index_tree_.end()) {
+    LOG(WARNING) << "can not find the index tree for column:" << col_id;
+    return;
+  }
   for (const shared_ptr<RowSet>& rs : iter->second->unbounded_rowsets) {
     rowsets->push_back(rs.get());
   }
@@ -308,7 +317,11 @@ void RowSetTree::FindRowSetsWithKeyInRange(const ColumnId& col_id,
   DCHECK(initted_);
 
   ColumnIdToIndexTreeMap::const_iterator iter = col_id_to_index_tree_.find(col_id);
-  if (iter == col_id_to_index_tree_.end()) return;
+  if (iter == col_id_to_index_tree_.end()) {
+    LOG(WARNING) << "can not find the index tree for column:" << col_id;
+    return;
+  }
+
   for (const shared_ptr<RowSet>& rs : iter->second->unbounded_rowsets) {
     rowsets->push_back(rs.get());
   }
@@ -325,11 +338,13 @@ void RowSetTree::FindRowSetsWithKeyInRange(const ColumnId& col_id,
 void RowSetTree::ForEachRowSetContainingKeys(const ColumnId& col_id,
                                              const std::vector<Slice>& encoded_keys,
                                              const std::function<void(RowSet*, int)>& cb) const {
-
   DCHECK(std::is_sorted(encoded_keys.cbegin(), encoded_keys.cend(), Slice::Comparator()));  
-
   ColumnIdToIndexTreeMap::const_iterator iter = col_id_to_index_tree_.find(col_id);
-  if (iter == col_id_to_index_tree_.end()) return;
+  if (iter == col_id_to_index_tree_.end()) {
+    LOG(WARNING) << "can not find the index tree for column:" << col_id;
+    return;
+  }
+
   for (const shared_ptr<RowSet>& rs : iter->second->unbounded_rowsets) {
     for (int i = 0; i < encoded_keys.size(); i++) {
       cb(rs.get(), i);

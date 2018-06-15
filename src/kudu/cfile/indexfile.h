@@ -36,7 +36,7 @@ public:
   ~CIndexFileWriter();
 
   Status Open();
-  Status Append(rowid_t id, const void *entries, size_t count);
+  Status Append(rowid_t id, const void* entries, size_t count);
   Status FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer);
   size_t written_size() const;
 
@@ -45,14 +45,13 @@ public:
 private:
   DISALLOW_COPY_AND_ASSIGN(CIndexFileWriter);
 
-  Status Append(rowid_t id, const Slice* value);
+  Status Append(const std::string& entry, rowid_t id);
 
   FsManager* fs_;
   const ColumnSchema* col_schema_;
 
   BlockId key_block_id_;
   BlockId bitmap_block_id_;
-
   gscoped_ptr<cfile::CFileWriter> key_writer_;
   gscoped_ptr<cfile::CFileWriter> bitmap_writer_;
 
@@ -85,7 +84,7 @@ class CIndexFileReader {
 public:
   class Iterator;
 
-  static Status Open(std::shared_ptr<RowSetMetadata> rowset_metadata,
+  static Status Open(FsManager* fs,
                      std::shared_ptr<MemTracker> parent_mem_tracker,
                      const RowSetMetadata::BlockIdPair& block_ids,
                      std::unique_ptr<CIndexFileReader>* reader);
@@ -111,7 +110,6 @@ private:
 
   std::unique_ptr<CFileReader> key_reader_;
   std::unique_ptr<CFileReader> bitmap_reader_;
-
   std::string min_encoded_key_;
   std::string max_encoded_key_;
 };
@@ -120,19 +118,20 @@ class CIndexFileReader::Iterator {
 public:
   ~Iterator();
 
-  Status Init(const ColumnPredicate& pred, const TypeInfo* type_info);
-  const Roaring& GetRoaring() const;
+  Status Init();
+  Status Pushdown(const ColumnPredicate& predicate, Roaring& r);
 
 private:
   DISALLOW_COPY_AND_ASSIGN(Iterator);
   friend class CIndexFileReader;
 
   Iterator(CIndexFileReader* reader);
+  Status PushdownEquaility(const ColumnSchema& col_schema, const vector<const void*>& values, Roaring& r);
+  Status PushdownRange(const ColumnSchema& col_schema, const ColumnPredicate& predicate, Roaring& r);
 
   CIndexFileReader* reader_;
   gscoped_ptr<CFileIterator> key_iter_;
   gscoped_ptr<CFileIterator> bitmap_iter_;
-  Roaring c_;
 };
 
 class CMultiIndexFileReader {
@@ -170,8 +169,10 @@ private:
 class CMultiIndexFileReader::Iterator {
 public:
 
-  Status Init(const Schema* projection, ScanSpec *spec);
+  Status Init(const Schema* projection, ScanSpec* spec);
   Status GetBounds(rowid_t* lower_bound_idx, rowid_t* upper_bound_idx);
+
+  bool HasValidBitmap() const;
   bool Exist(rowid_t row_idx) const;
 
   ~Iterator();
@@ -187,6 +188,9 @@ private:
   typedef boost::container::flat_map<ColumnId, std::unique_ptr<CIndexFileReader::Iterator>> ColumnIdToReaderIterMap;
   ColumnIdToReaderIterMap reader_iters_;
 
+  // bHasResult_ equals to false, the result is empty definitively.
+  // bHasResult_ equals to true, maybe the c_ is still empty while the only one predicate is IsNotNull.
+  bool bHasResult_;
   Roaring c_;
 };
 

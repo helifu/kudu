@@ -471,8 +471,7 @@ class Tablet {
                                            const ScanSpec *spec,
                                            OrderMode order,
                                            vector<std::shared_ptr<RowwiseIterator> > *iters) const;
-  Status CaptureRowsetsByColumnPredicate(const ColumnId& col_id,
-                                         const ColumnPredicate& predicate,
+  Status CaptureRowsetsByColumnPredicate(const ColumnPredicate& predicate,
                                          vector<RowSet*>* rowsets) const;
 
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,

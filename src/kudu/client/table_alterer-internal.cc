@@ -113,7 +113,8 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
             !s.spec->data_->remove_default &&
             !s.spec->data_->has_encoding &&
             !s.spec->data_->has_compression &&
-            !s.spec->data_->has_block_size) {
+            !s.spec->data_->has_block_size &&
+            !s.spec->data_->has_index) {
           pb_step->set_type(AlterTableRequestPB::RENAME_COLUMN);
           pb_step->mutable_rename_column()->set_old_name(s.spec->data_->name);
           pb_step->mutable_rename_column()->set_new_name(s.spec->data_->rename_to);

@@ -159,8 +159,7 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
 }
 
 Status DiskRowSetWriter::InitMultiIndexWriter() {
-  CHECK(!schema_->has_index());
-
+  CHECK(schema_->has_index());
   FsManager* fs = rowset_metadata_->fs_manager();
   index_writer_.reset(new cfile::CMultiIndexFileWriter(fs, schema_));
   RETURN_NOT_OK(index_writer_->Open());

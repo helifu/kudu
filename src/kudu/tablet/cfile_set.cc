@@ -206,6 +206,7 @@ Status CFileSet::GetBounds(string* min_encoded_key,
 Status CFileSet::GetColumnBounds(const ColumnId col_id,
                                  std::string* min_encoded_key,
                                  std::string* max_encoded_key) const {
+  //LOG(INFO) << "CFileSet::GetColumnBounds:" << tablet_schema().ToString(); 
   if (!tablet_schema().has_index()) {
     return Status::Corruption("no index in CFileSet.");
   }
@@ -342,11 +343,8 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
   // ordinal range.
   RETURN_NOT_OK(PushdownRangeScanPredicate(spec));
 
-  // Setup Index Iterators.
-  RETURN_NOT_OK(CreateIndexIterators());
-
-  // Push down the index bounds.
-  RETURN_NOT_OK(PushdownIndexRangeScanPredicate(spec));
+  // Setup Index Iterators and init.
+  RETURN_NOT_OK(CreateAndInitIndexIterators(spec));
 
   initted_ = true;
 
@@ -417,31 +415,46 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
   return Status::OK();
 }
 
-Status CFileSet::Iterator::CreateIndexIterators() {
-  if (!schema().has_index()) return Status::OK();
+Status CFileSet::Iterator::CreateAndInitIndexIterators(ScanSpec* spec) {
+  if (!projection_->has_index()) {
+    LOG(INFO) << "schema has not index ...";
+    return Status::OK();
+  }
 
-  // Create Index Iterator
+  // Check whether there is index column in predicates.
+  bool hasIndexColumn = false;
+  for (const auto& one : spec->predicates()) {
+    if (one.second.column().is_indexed()) {
+      LOG(INFO) << "has an index column:" << one.first <<  " in predicates at least";
+      hasIndexColumn = true;
+      break;
+    }
+  }
+
+  // Skip if there is no index column in predicates.
+  if (!hasIndexColumn) {
+    LOG(INFO) << "predicates has no index column ...";
+    return Status::OK();
+  }
+  // Create Index Iterator.
   CMultiIndexFileReader::Iterator* iter;
   RETURN_NOT_OK(base_data_->NewIndexIterator(&iter));
   index_iter_.reset(iter);
 
-  return Status::OK();
-}
-
-Status CFileSet::Iterator::PushdownIndexRangeScanPredicate(ScanSpec* spec) {
-  if (!schema().has_index()) return Status::OK();
-
   // Init iterators.
   RETURN_NOT_OK(index_iter_->Init(projection_, spec));
 
-  rowid_t lower_idx = 0;
-  rowid_t upper_idx = 0;
-  RETURN_NOT_OK(index_iter_->GetBounds(&lower_idx, &upper_idx));
-
-  if (lower_idx == 0 && upper_idx ==0) return Status::OK();
-  lower_bound_idx_ = std::max(lower_bound_idx_, lower_idx);
-  upper_bound_idx_ = std::min(upper_bound_idx_, upper_idx);
-
+  LOG(INFO) << "1.lower_bound_idx:" << lower_bound_idx_ << ", upper_bound_idx:" << upper_bound_idx_;
+  rowid_t lower_idx = lower_bound_idx_;
+  rowid_t upper_idx = upper_bound_idx_;
+  Status s = index_iter_->GetBounds(&lower_idx, &upper_idx);
+  if (s.IsNotFound()) {
+    lower_bound_idx_ = upper_bound_idx_;
+  } else {
+    lower_bound_idx_ = std::max(lower_bound_idx_, lower_idx);
+    upper_bound_idx_ = std::min(upper_bound_idx_, upper_idx);
+  }
+  LOG(INFO) << "2.lower_bound_idx:" << lower_bound_idx_ << ", upper_bound_idx:" << upper_bound_idx_;
   return Status::OK();
 }
 
@@ -505,11 +518,14 @@ Status CFileSet::Iterator::InitializeSelectionVector(SelectionVector *sel_vec) {
   sel_vec->SetAllTrue();
 
   // Skip the unnecessary row_idx according to index.
-  if (!schema().has_index()) return Status::OK();
-  SelectionVectorView sel(sel_vec);
-  for (int i = 0; i < sel_vec->nrows(); ++i) {
-    if (!index_iter_->Exist(cur_idx_ + i)) {
-      sel.ClearBit(i);
+  if (projection_->has_index() 
+    && index_iter_.get() != nullptr
+    && index_iter_->HasValidBitmap()) {
+    SelectionVectorView sel(sel_vec);
+    for (int i = 0; i < sel_vec->nrows(); ++i) {
+      if (!index_iter_->Exist(cur_idx_ + i)) {
+        sel.ClearBit(i);
+      }
     }
   }
 

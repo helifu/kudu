@@ -210,11 +210,12 @@ Status DuplicatingRowSet::GetBounds(string* min_encoded_key,
 Status DuplicatingRowSet::GetColumnBounds(const ColumnId& col_id,
                                           std::string* min_encoded_key,
                                           std::string* max_encoded_key) const {
+  // ToDo
   
   
   
-  
-  return Status::OK();
+  //return Status::OK();
+  return Status::NotSupported("DuplicatingRowSet not support GetColumnBounds");
 }
 
 uint64_t DuplicatingRowSet::EstimateOnDiskSize() const {

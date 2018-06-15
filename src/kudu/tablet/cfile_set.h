@@ -210,10 +210,8 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   // store it in member fields.
   Status PushdownRangeScanPredicate(ScanSpec *spec);
 
-  // Look for a predicate which can be converted into a equality scan using the
-  // index column.
-  Status CreateIndexIterators();
-  Status PushdownIndexRangeScanPredicate(ScanSpec* spec);
+  // Create and init the index iterator.
+  Status CreateAndInitIndexIterators(ScanSpec* spec);
 
   void Unprepare();
 

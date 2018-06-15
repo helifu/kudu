@@ -229,15 +229,19 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
     id_to_index_.set(ids[i], i);
   }
 
-  // Determine whether any column is nullable & indexed.
+  // Determine whether any column is nullable.
   has_nullables_ = false;
+  for (const ColumnSchema& col : cols_) {
+    if (col.is_nullable()) {
+      has_nullables_ = true;
+      break;
+    }
+  }
+  // Determine whether any column is indexed.
   has_indexed_ = false;
   for (const ColumnSchema& col : cols_) {
     if (col.is_indexed()) {
       has_indexed_ = true;
-    }
-    if (col.is_nullable()) {
-      has_nullables_ = true;
       break;
     }
   }

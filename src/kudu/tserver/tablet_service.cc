@@ -1618,10 +1618,6 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
     // error codes throughout Kudu.
     *error_code = tmp_error_code;
     return s;
-  } else if (PREDICT_FALSE(s.IsAborted())) {
-    VLOG(1) << "the index judges that the result set is empty.";
-    *has_more_results = false;
-    return Status::OK();
   } else if (PREDICT_FALSE(!s.ok())) {
     LOG(WARNING) << "Error setting up scanner with request " << SecureShortDebugString(*req);
     *error_code = TabletServerErrorPB::UNKNOWN_ERROR;

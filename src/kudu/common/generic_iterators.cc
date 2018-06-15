@@ -511,6 +511,10 @@ Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
   // Initialize the selection vector indicating which rows have been
   // been deleted.
   RETURN_NOT_OK(iter_->InitializeSelectionVector(dst->selection_vector()));
+  if (!dst->selection_vector()->AnySelected()) {
+    DVLOG(1) << "0/" << dst->nrows() << " skipped predicate";
+    return Status::OK();
+  }
 
   for (const auto& col_pred : col_idx_predicates_) {
     // Materialize the column itself into the row block.
