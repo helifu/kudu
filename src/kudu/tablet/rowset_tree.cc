@@ -189,6 +189,36 @@ void RowSetTree::FindRowSetsIntersectingInterval(const Slice &lower_bound,
   }
 }
 
+void RowSetTree::FindRowSetsIntersectingIntervalGE(const Slice& lower_bound,
+                                                   std::vector<RowSet*> *rowsets) const {
+  DCHECK(initted_);
+  for (const shared_ptr<RowSet> &rs : unbounded_rowsets_) {
+    rowsets->push_back(rs.get());
+  }
+  vector<RowSetWithBounds*> from_tree;
+  from_tree.reserve(all_rowsets_.size());
+  tree_->FindIntersectingIntervalGE(lower_bound, &from_tree);
+  rowsets->reserve(rowsets->size() + from_tree.size());
+  for (RowSetWithBounds *rs : from_tree) {
+    rowsets->push_back(rs->rowset);
+  }
+}
+
+void RowSetTree::FindRowSetsIntersectingIntervalLT(const Slice& upper_bound,
+                                                   std::vector<RowSet*> *rowsets) const {
+  DCHECK(initted_);
+  for (const shared_ptr<RowSet> &rs : unbounded_rowsets_) {
+    rowsets->push_back(rs.get());
+  }
+  vector<RowSetWithBounds*> from_tree;
+  from_tree.reserve(all_rowsets_.size());
+  tree_->FindIntersectingIntervalLT(upper_bound, &from_tree);
+  rowsets->reserve(rowsets->size() + from_tree.size());
+  for (RowSetWithBounds *rs : from_tree) {
+    rowsets->push_back(rs->rowset);
+  }
+}
+
 void RowSetTree::FindRowSetsWithKeyInRange(const Slice &encoded_key,
                                            vector<RowSet *> *rowsets) const {
   DCHECK(initted_);

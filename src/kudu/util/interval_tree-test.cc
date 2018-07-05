@@ -51,8 +51,18 @@ struct IntInterval {
   }
 
   bool Intersects(const IntInterval &other) const {
-    if (other.left > right) return false;
+    if (other.left >= right) return false;
     if (left > other.right) return false;
+    return true;
+  }
+
+  bool Ge(int left) const {
+    if (this->right < left) return false;
+    return true;
+  }
+
+  bool Lt(int right) const {
+    if (this->left >= right) return false;
     return true;
   }
 
@@ -146,6 +156,27 @@ static void FindIntersectingBruteForce(const vector<IntInterval> &intervals,
   }
 }
 
+// Find any intervals in 'intervals' which fits 'lower_bound' by brute force.
+static void FindIntersectingBruteForceGE(const vector<IntInterval>& intervals,
+                                         int lower_bound,
+                                         vector<IntInterval>* results) {
+  for (const IntInterval &i : intervals) {
+    if (i.Ge(lower_bound)) {
+      results->push_back(i);
+    }
+  }
+}
+
+// Find any intervals in 'intervals' which fits 'upper_bound' by brute force.
+static void FindIntersectingBruteForceLT(const vector<IntInterval>& intervals,
+                                         int upper_bound,
+                                         vector<IntInterval>* results) {
+  for (const IntInterval& i : intervals) {
+    if (i.Lt(upper_bound)) {
+      results->push_back(i);
+    }
+  }
+}
 
 // Verify that IntervalTree::FindContainingPoint yields the same results as the naive
 // brute-force O(n) algorithm.
@@ -178,7 +209,37 @@ static void VerifyFindIntersectingInterval(const vector<IntInterval> all_interva
   std::sort(brute_force.begin(), brute_force.end(), CompareIntervals);
 
   SCOPED_TRACE(Stringify(all_intervals) +
-               StringPrintf(" (q=[%d,%d])", query_interval.left, query_interval.right));
+               StringPrintf(" (q=[%d,%d))", query_interval.left, query_interval.right));
+  EXPECT_EQ(Stringify(brute_force), Stringify(results));
+}
+
+static void VerifyFindIntersectingIntervalGE(const vector<IntInterval> all_intervals,
+                                             const IntervalTree<IntTraits> &tree,
+                                             int lower_bound) {
+  vector<IntInterval> results;
+  tree.FindIntersectingIntervalGE(lower_bound, &results);
+  std::sort(results.begin(), results.end(), CompareIntervals);
+
+  vector<IntInterval> brute_force;
+  FindIntersectingBruteForceGE(all_intervals, lower_bound, &brute_force);
+  std::sort(brute_force.begin(), brute_force.end(), CompareIntervals);
+
+  SCOPED_TRACE(Stringify(all_intervals) + StringPrintf(" (q>=%d)", lower_bound));
+  EXPECT_EQ(Stringify(brute_force), Stringify(results));
+}
+
+static void VerifyFindIntersectingIntervalLT(const vector<IntInterval> all_intervals,
+                                             const IntervalTree<IntTraits> &tree,
+                                             int upper_bound) {
+  vector<IntInterval> results;
+  tree.FindIntersectingIntervalLT(upper_bound, &results);
+  std::sort(results.begin(), results.end(), CompareIntervals);
+
+  vector<IntInterval> brute_force;
+  FindIntersectingBruteForceLT(all_intervals, upper_bound, &brute_force);
+  std::sort(brute_force.begin(), brute_force.end(), CompareIntervals);
+
+  SCOPED_TRACE(Stringify(all_intervals) + StringPrintf(" (q<%d)", upper_bound));
   EXPECT_EQ(Stringify(brute_force), Stringify(results));
 }
 
@@ -205,6 +266,8 @@ TEST_F(TestIntervalTree, TestBasic) {
     for (int j = i; j <= 5; j++) {
       VerifyFindIntersectingInterval(intervals, t, IntInterval(i, j, 0));
     }
+    VerifyFindIntersectingIntervalGE(intervals, t, i);
+    VerifyFindIntersectingIntervalLT(intervals, t, i);
   }
 }
 
@@ -225,6 +288,8 @@ TEST_F(TestIntervalTree, TestRandomized) {
     int l = rand() % 100; // NOLINT(runtime/threadsafe_fn)
     int r = l + rand() % 100; // NOLINT(runtime/threadsafe_fn)
     VerifyFindIntersectingInterval(intervals, t, IntInterval(l, r));
+    VerifyFindIntersectingIntervalGE(intervals, t, l);
+    VerifyFindIntersectingIntervalLT(intervals, t, r);
   }
 }
 
@@ -234,6 +299,8 @@ TEST_F(TestIntervalTree, TestEmpty) {
 
   VerifyFindContainingPoint(empty, t, 1);
   VerifyFindIntersectingInterval(empty, t, IntInterval(1, 2, 0));
+  VerifyFindIntersectingIntervalGE(empty, t, 1);
+  VerifyFindIntersectingIntervalLT(empty, t, 1);
 }
 
 TEST_F(TestIntervalTree, TestBigO) {

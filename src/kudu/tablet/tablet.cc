@@ -1590,16 +1590,22 @@ Status Tablet::CaptureConsistentIterators(
   ret.push_back(shared_ptr<RowwiseIterator>(ms_iter.release()));
 
   // Cull row-sets in the case of key-range queries.
-  if (spec != nullptr && spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
-    // TODO : support open-ended intervals
-    // TODO: the upper bound key is exclusive, but the RowSetTree function takes
-    // an inclusive interval. So, we might end up fetching one more rowset than
-    // necessary.
-    vector<RowSet *> interval_sets;
-    components_->rowsets->FindRowSetsIntersectingInterval(
-        spec->lower_bound_key()->encoded_key(),
-        spec->exclusive_upper_bound_key()->encoded_key(),
-        &interval_sets);
+  if (spec != nullptr && (spec->lower_bound_key() || spec->exclusive_upper_bound_key())) {
+    vector<RowSet*> interval_sets;
+    if (spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
+      components_->rowsets->FindRowSetsIntersectingInterval(
+          spec->lower_bound_key()->encoded_key(), 
+          spec->exclusive_upper_bound_key()->encoded_key(),
+          &interval_sets);
+    } else if (spec->lower_bound_key()) {
+      components_->rowsets->FindRowSetsIntersectingIntervalGE(
+          spec->lower_bound_key()->encoded_key(),
+          &interval_sets);
+    } else if (spec->exclusive_upper_bound_key()) {
+      components_->rowsets->FindRowSetsIntersectingIntervalLT(
+          spec->exclusive_upper_bound_key()->encoded_key(),
+          &interval_sets);
+    }
     for (const RowSet *rs : interval_sets) {
       gscoped_ptr<RowwiseIterator> row_it;
       RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, order, &row_it),
@@ -1611,7 +1617,7 @@ Status Tablet::CaptureConsistentIterators(
     return Status::OK();
   }
 
-  // If there are no encoded predicates or they represent an open-ended range, then
+  // If there are no encoded predicates , then
   // fall back to grabbing all rowset iterators
   for (const shared_ptr<RowSet> &rs : components_->rowsets->all_rowsets()) {
     gscoped_ptr<RowwiseIterator> row_it;

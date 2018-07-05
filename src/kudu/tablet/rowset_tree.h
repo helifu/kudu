@@ -86,6 +86,10 @@ class RowSetTree {
   void FindRowSetsIntersectingInterval(const Slice &lower_bound,
                                        const Slice &upper_bound,
                                        std::vector<RowSet *> *rowsets) const;
+  void FindRowSetsIntersectingIntervalGE(const Slice& lower_bound,
+                                         std::vector<RowSet*> *rowsets) const;
+  void FindRowSetsIntersectingIntervalLT(const Slice& upper_bound,
+                                         std::vector<RowSet*> *rowsets) const;
 
   const RowSetVector &all_rowsets() const { return all_rowsets_; }
 

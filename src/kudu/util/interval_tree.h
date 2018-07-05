@@ -137,6 +137,16 @@ class IntervalTree {
   // The vector is not cleared first.
   void FindIntersectingInterval(const interval_type &query,
                                 IntervalVector *results) const;
+  // Greater than or equal.
+  // The 'query' is the lower_bound.
+  template<class QueryPointType>
+  void FindIntersectingIntervalGE(const QueryPointType& query,
+                                  IntervalVector *results) const;
+  // Less than or equal.
+  // The 'query' is the upper_bound.
+  template<class QueryPointType>
+  void FindIntersectingIntervalLT(const QueryPointType &query,
+                                  IntervalVector *results) const;
  private:
   static void Partition(const IntervalVector &in,
                         point_type *split_point,
