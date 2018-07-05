@@ -1601,7 +1601,8 @@ Status Tablet::CaptureConsistentIterators(
       components_->rowsets->FindRowSetsIntersectingIntervalGE(
           spec->lower_bound_key()->encoded_key(),
           &interval_sets);
-    } else if (spec->exclusive_upper_bound_key()) {
+    } else {
+      DCHECK(spec->exclusive_upper_bound_key() != nullptr);
       components_->rowsets->FindRowSetsIntersectingIntervalLT(
           spec->exclusive_upper_bound_key()->encoded_key(),
           &interval_sets);
