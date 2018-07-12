@@ -128,6 +128,7 @@ Status CIndexFileWriter::Open() {
   key_opts.write_posidx = false;
   key_opts.write_validx = true;
   key_opts.storage_attributes = col_schema_->attributes();
+  key_opts.storage_attributes.compression = NO_COMPRESSION;
   key_opts.storage_attributes.cfile_block_size = FLAGS_default_index_block_size_bytes;
   key_writer_.reset(new CFileWriter(key_opts, col_schema_->type_info(), false, std::move(key_block)));
   RETURN_NOT_OK_PREPEND(key_writer_->Start(), 
@@ -142,7 +143,7 @@ Status CIndexFileWriter::Open() {
   bitmap_opts.write_posidx = true;
   bitmap_opts.write_validx = false;
   bitmap_opts.storage_attributes.encoding = PLAIN_ENCODING;
-  bitmap_opts.storage_attributes.compression = LZ4;
+  bitmap_opts.storage_attributes.compression = NO_COMPRESSION;
   bitmap_writer_.reset(new CFileWriter(bitmap_opts, GetTypeInfo(BINARY), false, std::move(bitmap_block)));
   RETURN_NOT_OK_PREPEND(bitmap_writer_->Start(), 
         "unable to start bitmap writer for column " + col_schema_->ToString());
@@ -161,17 +162,13 @@ Status CIndexFileWriter::Append(rowid_t id, const void* entries, size_t count) {
       const Slice* val = reinterpret_cast<const Slice*>(vals);
       entry.assign(reinterpret_cast<const char*>(val->data()), val->size());
       vals += sizeof(Slice);
-      //LOG(INFO) << "Append entry(" << entry << ")" << ", size(" <<  entry.length() << ")";
     } else {
       size_t size = col_schema_->type_info()->size();
       const char* val = reinterpret_cast<const char*>(vals);
       entry.assign(val, size);
       vals += size;
-      //LOG(INFO) << "Append entry(";
-      //DebugEntry(col_schema_, val);
-      //LOG(INFO) << ")";
     }
-    DebugEntry(col_schema_, entry.c_str());
+    //DebugEntry(col_schema_, entry.c_str());
 
     RETURN_NOT_OK_PREPEND(Append(entry, id++),
       "unable to Append for column " + col_schema_->ToString());
@@ -199,24 +196,20 @@ Status CIndexFileWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
       Slice key(iter->first);
       RETURN_NOT_OK_PREPEND(key_writer_->AppendEntries(&key, 1), 
         "unable to AppendEntries (&key) to CFile for column " + col_schema_->ToString());
-      //LOG(INFO) << "Finish entry(" << iter->first << ")" << ", size(" <<  iter->first.length() << ")";
     } else {
       const void* key = reinterpret_cast<const void*>(iter->first.c_str());
       RETURN_NOT_OK_PREPEND(key_writer_->AppendEntries(key, 1),
         "unable to AppendEntries (key) to CFile for column " + col_schema_->ToString());
-      /*LOG(INFO) << "Finish entry(";
-      DebugEntry(col_schema_, key);
-      LOG(INFO) << ")";*/
     }
-    DebugEntry(col_schema_, iter->first.c_str());
+    //DebugEntry(col_schema_, iter->first.c_str());
 
     // Flush Bitmap.
     Roaring* c = iter->second.get();
-    LOG(INFO) << c->toString();
+    //LOG(INFO) << c->toString();
     c->runOptimize();
-    size_t size = c->getSizeInBytes();
+    size_t size = c->getSizeInBytes(false);
     std::unique_ptr<char> buff(new char[size]);
-    c->write(buff.get());
+    c->write(buff.get(), false);
     Slice bitmap(buff.get(), size);
     RETURN_NOT_OK_PREPEND(bitmap_writer_->AppendEntries(&bitmap, 1),
           "unable to AppendEntries (bitmap) to CFile for column " + col_schema_->ToString());
@@ -246,10 +239,7 @@ Status CIndexFileWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
 
   LOG(INFO) << "Finish block for column ''" << col_schema_->name()
             << "' with size("<< key_writer_->written_size()
-            << "," << bitmap_writer_->written_size() << ") , min&max ...";
-  DebugEntry(col_schema_, map_.begin()->first.c_str());
-  DebugEntry(col_schema_, map_.rbegin()->first.c_str());
-  LOG(INFO) << "    ... finish!!";
+            << "," << bitmap_writer_->written_size() << ")";
 
   return Status::OK();
 }
@@ -309,7 +299,6 @@ Status CMultiIndexFileWriter::AppendBlock(const RowBlock& block) {
 }
 
 Status CMultiIndexFileWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer) {
-  LOG(INFO) << "Finish and release blocks. START";
   for (int i = 0; i < schema_->num_columns(); ++i) {
     if (schema_->column(i).is_indexed()) {
       const ColumnId& col_id = schema_->column_id(i);
@@ -317,7 +306,6 @@ Status CMultiIndexFileWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* 
       RETURN_NOT_OK(writer->FinishAndReleaseBlocks(closer));
     }
   }
-  LOG(INFO) << "Finish and release blocks. END";
   return Status::OK();
 }
 
@@ -330,7 +318,6 @@ size_t CMultiIndexFileWriter::written_size() const {
       size += writer->written_size();
     }
   }
-
   return size;
 }
 
@@ -435,7 +422,6 @@ CIndexFileReader::Iterator::~Iterator() {
 }
 
 Status CIndexFileReader::Iterator::Init() {
-  //LOG(INFO) << "Init the iterator of CIndexFileReader";
   CFileIterator* key_iter = nullptr;
   CFileIterator* bitmap_iter = nullptr;
   RETURN_NOT_OK(reader_->NewIterator(&key_iter, &bitmap_iter));
@@ -486,7 +472,7 @@ Status CIndexFileReader::Iterator::PushdownEquaility(const ColumnSchema& col_sch
     } else {
       entry.assign(reinterpret_cast<const char*>(value), col_schema.type_info()->size());
     }
-    DebugEntry(&col_schema, entry.c_str());
+    //DebugEntry(&col_schema, entry.c_str());
 
     // Prepare the 'EncodeKey'.
     faststring enc_value;
@@ -506,13 +492,14 @@ Status CIndexFileReader::Iterator::PushdownEquaility(const ColumnSchema& col_sch
     // Get the Bitmap.
     Slice bitmap;
     SelectionVector sel_vec(n);
+    sel_vec.SetAllTrue();
     ColumnBlock col_block(GetTypeInfo(BINARY), nullptr, &bitmap, n, &arena);
     ColumnMaterializationContext ctx(0, nullptr, &col_block, &sel_vec);
     RETURN_NOT_OK(bitmap_iter_->SeekToOrdinal(key_iter_->GetCurrentOrdinal()));
     RETURN_NOT_OK(bitmap_iter_->PrepareBatch(&n));
     RETURN_NOT_OK(bitmap_iter_->Scan(&ctx));
     RETURN_NOT_OK(bitmap_iter_->FinishBatch());
-    const Roaring& c = Roaring::readSafe(reinterpret_cast<const char*>(bitmap.data()), bitmap.size());
+    const Roaring& c = Roaring::read(reinterpret_cast<const char*>(bitmap.data()), false);
     if (r.isEmpty()) {
       r = std::move(c);
     } else {
@@ -520,7 +507,6 @@ Status CIndexFileReader::Iterator::PushdownEquaility(const ColumnSchema& col_sch
     }
   }
 
-  if (r.isEmpty()) return Status::NotFound("");
   return Status::OK();
 }
 
@@ -541,7 +527,7 @@ Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
     } else {
       entry.assign(reinterpret_cast<const char*>(predicate.raw_lower()), col_schema.type_info()->size());
     }
-    DebugEntry(&col_schema, entry.c_str());
+    //DebugEntry(&col_schema, entry.c_str());
 
     faststring enc_value;
     key_encoder->ResetAndEncode(predicate.raw_lower(), &enc_value);
@@ -594,6 +580,7 @@ Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
     n = std::min(n, static_cast<size_t>(upper_bound_id-lower_bound_id));
 
     SelectionVector sel_vec(n);
+    sel_vec.SetAllTrue();
     ColumnBlock col_block(GetTypeInfo(BINARY), nullptr, &bitmaps, n, &arena);
     ColumnMaterializationContext ctx(0, nullptr, &col_block, &sel_vec);
     RETURN_NOT_OK(bitmap_iter_->SeekToOrdinal(lower_bound_id));
@@ -601,7 +588,7 @@ Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
     RETURN_NOT_OK(bitmap_iter_->Scan(&ctx));
     RETURN_NOT_OK(bitmap_iter_->FinishBatch());
     for (int i = 0; i < n; ++i) {
-      const Roaring& c = Roaring::readSafe(reinterpret_cast<const char*>(bitmaps[i].data()), bitmaps[i].size());
+      const Roaring& c = Roaring::read(reinterpret_cast<const char*>(bitmaps[i].data()), false);
       if (PREDICT_FALSE(r.isEmpty())) {
         r = std::move(c);
       } else {
@@ -612,7 +599,6 @@ Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
     lower_bound_id += n;
   }
 
-  if (r.isEmpty()) return Status::NotFound("");
   return Status::OK();
 }
 
@@ -672,7 +658,9 @@ Status CMultiIndexFileReader::GetColumnBounds(const ColumnId& col_id,
 //////////////////////////////////////////////////////////////////////////
 CMultiIndexFileReader::Iterator::Iterator(const CMultiIndexFileReader* reader)
   : reader_(reader)
-  , bHasResult_(true) {
+  , bHasResult_(true)
+  , c_card_(0)
+  , arr_i_(0) {
 }
 
 CMultiIndexFileReader::Iterator::~Iterator() {
@@ -683,8 +671,6 @@ Status CMultiIndexFileReader::Iterator::Init(const Schema* projection, ScanSpec*
   for (const auto& one : spec->predicates()) {
     // Skip the non-index column.
     if (!one.second.column().is_indexed()) continue;
-
-    col_names.push_back(one.first);
 
     // Find the reader according to column id.
     int col_idx = projection->find_column(one.first);
@@ -700,19 +686,22 @@ Status CMultiIndexFileReader::Iterator::Init(const Schema* projection, ScanSpec*
     RETURN_NOT_OK(iter->second->NewIterator(&it));
     std::unique_ptr<CIndexFileReader::Iterator> reader_iter(it);
     RETURN_NOT_OK(reader_iter->Init());
+
+    // Push down predicate and get index-bitmap back.
     Roaring c;
     Status s = reader_iter->Pushdown(one.second, c);
-    if (s.IsNotFound() && c.isEmpty()) {
-      LOG(INFO) << "this predicate can not filter any rows, so the result is empty.";
-      bHasResult_ = false;
-      c_.swap(c);
-      break;
+    if (s.IsNotSupported() && 
+        one.second.predicate_type() == PredicateType::IsNull) {
+      continue; // for IsNotNull.
     }
     RETURN_NOT_OK(s);
-    reader_iters_[col_id] = std::move(reader_iter);
+    if (c.isEmpty()) {
+      LOG(INFO) << "predicate of "<< one.first << " can not filter any rows, so the result is zero.";
+      bHasResult_ = false;
+      break;
+    }
 
     // Merge bitmaps.
-    if (PREDICT_FALSE(c.isEmpty())) continue; // for IsNotNull.
     if (c_.isEmpty()) { // first time.
       c_ = std::move(c);
     } else {
@@ -723,14 +712,25 @@ Status CMultiIndexFileReader::Iterator::Init(const Schema* projection, ScanSpec*
         break;
       }
     }
+
+    col_names.push_back(one.first);
+    reader_iters_[col_id] = std::move(reader_iter);
   }
   reader_iters_.shrink_to_fit();
-  LOG(INFO) << "capture a bitmap: " << c_.toString();
-  //LOG(INFO) << "capture a bitmap [" << c_.minimum() << "," << c_.maximum() << "]";
+  //LOG(INFO) << "capture a bitmap: " << c_.toString();
 
   // Remove the predicates that have index.
   for (auto& name : col_names) {
     spec->RemovePredicate(name);
+  }
+
+  // Prepare for traversal.
+  if (bHasResult_ && !c_.isEmpty()) {
+    c_card_ = c_.cardinality();
+    uint32_t* arr = new uint32_t[c_card_];
+    CHECK(arr);
+    c_.toUint32Array(arr);
+    arr_.reset(arr);
   }
 
   return Status::OK();
@@ -738,29 +738,13 @@ Status CMultiIndexFileReader::Iterator::Init(const Schema* projection, ScanSpec*
 
 Status CMultiIndexFileReader::Iterator::GetBounds(rowid_t* lower_bound_idx,
                                                   rowid_t* upper_bound_idx) {
-  if (bHasResult_) {
-    if (c_.isEmpty()) {
-      LOG(INFO) << "The CRoaring is empty, should not change the bounds.";
-    } else {
-      *lower_bound_idx = c_.minimum();
-      *upper_bound_idx = c_.maximum() + 1;
-    }
-  } else {
-    LOG(INFO) << "The result is empty.";
-    return Status::NotFound("");
+  if (!bHasResult_) return Status::NotFound("");
+  if (!c_.isEmpty()) {
+    uint32_t* arr = arr_.get();
+    *lower_bound_idx = arr[0];
+    *upper_bound_idx = arr[c_card_-1] + 1; // Exclusive.
   }
-
   return Status::OK();
-}
-
-bool CMultiIndexFileReader::Iterator::HasValidBitmap() const {
-  if (bHasResult_ && !c_.isEmpty())
-    return true;
-  return false;
-}
-
-bool CMultiIndexFileReader::Iterator::Exist(rowid_t row_idx) const {
-  return c_.contains(row_idx);
 }
 
 }

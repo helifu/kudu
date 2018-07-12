@@ -172,8 +172,20 @@ public:
   Status Init(const Schema* projection, ScanSpec* spec);
   Status GetBounds(rowid_t* lower_bound_idx, rowid_t* upper_bound_idx);
 
-  bool HasValidBitmap() const;
-  bool Exist(rowid_t row_idx) const;
+  inline bool HasValidBitmap() const {
+    if (bHasResult_ && !c_.isEmpty())
+      return true;
+    return false;
+  }
+  inline void InitializeSelectionVector(rowid_t cur_idx, SelectionVector *sel_vec) {
+    uint32_t* arr = arr_.get();
+    for (; arr_i_ < c_card_; ++arr_i_) {
+      if (arr[arr_i_] > (cur_idx+sel_vec->nrows())) break;
+      sel_vec->SetRowSelected(arr[arr_i_] - cur_idx);
+      //LOG(INFO) << "set row selected:" << arr[arr_i_] - cur_idx;
+    }
+    return;
+  }
 
   ~Iterator();
 
@@ -188,10 +200,13 @@ private:
   typedef boost::container::flat_map<ColumnId, std::unique_ptr<CIndexFileReader::Iterator>> ColumnIdToReaderIterMap;
   ColumnIdToReaderIterMap reader_iters_;
 
-  // bHasResult_ equals to false, the result is empty definitively.
-  // bHasResult_ equals to true, maybe the c_ is still empty while the only one predicate is IsNotNull.
+  // bHasResult_ equals to false: the result is empty definitively.
+  // bHasResult_ equals to true : maybe the c_ is still empty when the only one predicate is IsNotNull.
   bool bHasResult_;
   Roaring c_;
+  uint64_t c_card_;
+  uint64_t arr_i_;
+  std::unique_ptr<uint32_t> arr_;
 };
 
 } // namespace cfile

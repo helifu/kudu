@@ -416,26 +416,19 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
 }
 
 Status CFileSet::Iterator::CreateAndInitIndexIterators(ScanSpec* spec) {
-  if (!projection_->has_index()) {
-    LOG(INFO) << "schema has not index ...";
-    return Status::OK();
-  }
+  if (!projection_->has_index()) return Status::OK();
 
   // Check whether there is index column in predicates.
   bool hasIndexColumn = false;
   for (const auto& one : spec->predicates()) {
     if (one.second.column().is_indexed()) {
-      LOG(INFO) << "has an index column:" << one.first <<  " in predicates at least";
       hasIndexColumn = true;
       break;
     }
   }
-
   // Skip if there is no index column in predicates.
-  if (!hasIndexColumn) {
-    LOG(INFO) << "predicates has no index column ...";
-    return Status::OK();
-  }
+  if (!hasIndexColumn) return Status::OK();
+  
   // Create Index Iterator.
   CMultiIndexFileReader::Iterator* iter;
   RETURN_NOT_OK(base_data_->NewIndexIterator(&iter));
@@ -515,18 +508,14 @@ Status CFileSet::Iterator::PrepareColumn(ColumnMaterializationContext *ctx) {
 }
 
 Status CFileSet::Iterator::InitializeSelectionVector(SelectionVector *sel_vec) {
-  sel_vec->SetAllTrue();
-
   // Skip the unnecessary row_idx according to index.
   if (projection_->has_index() 
     && index_iter_.get() != nullptr
     && index_iter_->HasValidBitmap()) {
-    SelectionVectorView sel(sel_vec);
-    for (int i = 0; i < sel_vec->nrows(); ++i) {
-      if (!index_iter_->Exist(cur_idx_ + i)) {
-        sel.ClearBit(i);
-      }
-    }
+    sel_vec->SetAllFalse();
+    index_iter_->InitializeSelectionVector(cur_idx_, sel_vec);
+  } else {
+    sel_vec->SetAllTrue();
   }
 
   return Status::OK();
