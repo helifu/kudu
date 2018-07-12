@@ -152,7 +152,9 @@ class BlockDecoder {
   // In the case that the values are themselves references
   // to other memory (eg Slices), the referred-to memory is
   // allocated in the dst block's arena.
-  virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) = 0;
+  virtual Status CopyNextValues(size_t *n,
+                                SelectionVectorView* sel,
+                                ColumnDataView *dst) = 0;
 
   // Fetch the next values from the block and evaluate whether they satisfy
   // the predicate. Mark the row in the view into the selection vector. This
@@ -166,7 +168,7 @@ class BlockDecoder {
                                  ColumnMaterializationContext* ctx,
                                  SelectionVectorView* sel,
                                  ColumnDataView* dst) {
-    RETURN_NOT_OK(CopyNextValues(n, dst));
+    RETURN_NOT_OK(CopyNextValues(n, sel, dst));
     ctx->SetDecoderEvalNotSupported();
     return Status::OK();
   }

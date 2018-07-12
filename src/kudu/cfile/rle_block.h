@@ -164,7 +164,7 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
     cur_idx_ = pos;
   }
 
-  virtual Status CopyNextValues(size_t *n, ColumnDataView* dst) OVERRIDE {
+  virtual Status CopyNextValues(size_t *n, SelectionVectorView* sel, ColumnDataView* dst) OVERRIDE {
     DCHECK(parsed_);
 
     DCHECK_LE(*n, dst->nrows());
@@ -394,7 +394,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
     return Status::NotFound("not in block");
   }
 
-  virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE {
+  virtual Status CopyNextValues(size_t *n, SelectionVectorView* sel, ColumnDataView *dst) OVERRIDE {
     DCHECK(parsed_);
 
     DCHECK_LE(*n, dst->nrows());

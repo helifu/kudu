@@ -154,7 +154,7 @@ Status CIndexFileWriter::Open() {
 }
 
 Status CIndexFileWriter::Append(rowid_t id, const void* entries, size_t count) {
-  LOG(INFO) << "Append " << count << " entries from " << id;
+  //LOG(INFO) << "Append " << count << " entries from " << id;
   const uint8_t* vals = reinterpret_cast<const uint8_t*>(entries);
   while (count--) {
     std::string entry;

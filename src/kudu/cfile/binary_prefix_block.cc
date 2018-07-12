@@ -385,7 +385,8 @@ Status BinaryPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
   }
 }
 
-Status BinaryPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
+Status BinaryPrefixBlockDecoder::CopyNextValues(
+    size_t *n, SelectionVectorView* sel, ColumnDataView *dst) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info()->physical_type(), BINARY);
 

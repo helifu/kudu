@@ -297,8 +297,10 @@ Status BinaryPlainBlockDecoder::HandleBatch(size_t* n, ColumnDataView* dst, Cell
   return Status::OK();
 }
 
-Status BinaryPlainBlockDecoder::CopyNextValues(size_t* n, ColumnDataView* dst) {
+Status BinaryPlainBlockDecoder::CopyNextValues(
+    size_t* n, SelectionVectorView* sel, ColumnDataView* dst) {
   return HandleBatch(n, dst, [&](size_t i, Slice elem, Slice* out, Arena* out_arena) {
+    if (!sel->TestBit(i)) return;
     CHECK(out_arena->RelocateSlice(elem, out));
   });
 }

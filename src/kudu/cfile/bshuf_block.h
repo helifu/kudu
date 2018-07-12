@@ -311,7 +311,7 @@ class BShufBlockDecoder final : public BlockDecoder {
     return Status::OK();
   }
 
-  Status CopyNextValues(size_t* n, ColumnDataView* dst) OVERRIDE {
+  Status CopyNextValues(size_t* n, SelectionVectorView* sel, ColumnDataView* dst) OVERRIDE {
     DCHECK_EQ(dst->stride(), sizeof(CppType));
     return CopyNextValuesToArray(n, dst->data());
   }

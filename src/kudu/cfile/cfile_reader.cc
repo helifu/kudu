@@ -1049,7 +1049,7 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
                                                      &remaining_sel,
                                                      &remaining_dst));
           } else {
-            RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &remaining_dst));
+            RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &remaining_sel, &remaining_dst));
           }
           DCHECK_EQ(nblock, this_batch);
           pb->needs_rewind_ = true;
@@ -1080,7 +1080,7 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
       if (ctx->DecoderEvalNotDisabled()) {
         RETURN_NOT_OK(pb->dblk_->CopyNextAndEval(&this_batch, ctx, &remaining_sel, &remaining_dst));
       } else {
-        RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &remaining_dst));
+        RETURN_NOT_OK(pb->dblk_->CopyNextValues(&this_batch, &remaining_sel, &remaining_dst));
       }
       pb->needs_rewind_ = true;
       DCHECK_LE(this_batch, rem);

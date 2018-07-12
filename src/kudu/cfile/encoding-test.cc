@@ -67,7 +67,10 @@ class TestEncoding : public KuduTest {
     ColumnBlock cb(GetTypeInfo(type), nullptr, ret, 1, &arena_);
     ColumnDataView cdv(&cb);
     size_t n = 1;
-    ASSERT_OK(decoder->CopyNextValues(&n, &cdv));
+    SelectionVector sel_vec(n);
+    sel_vec.SetAllTrue();
+    SelectionVectorView sel(&sel_vec);
+    ASSERT_OK(decoder->CopyNextValues(&n, &sel, &cdv));
     ASSERT_EQ(1, n);
   }
 
@@ -314,7 +317,10 @@ class TestEncoding : public KuduTest {
     ColumnDataView cdv(&cb);
     sbd.SeekToPositionInBlock(0);
     size_t n = kCount + 10;
-    ASSERT_OK(sbd.CopyNextValues(&n, &cdv));
+    SelectionVector sel_vec(n);
+    sel_vec.SetAllTrue();
+    SelectionVectorView sel(&sel_vec);
+    ASSERT_OK(sbd.CopyNextValues(&n, &sel, &cdv));
     ASSERT_EQ(kCount, n);
     ASSERT_FALSE(sbd.HasNext());
 
@@ -427,7 +433,10 @@ class TestEncoding : public KuduTest {
 
       size_t to_decode = (random() % 30) + 1;
       size_t n = to_decode > view.nrows() ? view.nrows() : to_decode;
-      ASSERT_OK_FAST(pbd.CopyNextValues(&n, &view));
+      SelectionVector sel_vec(n);
+      sel_vec.SetAllTrue();
+      SelectionVectorView sel(&sel_vec);
+      ASSERT_OK_FAST(pbd.CopyNextValues(&n, &sel, &view));
       ASSERT_GE(to_decode, n);
       view.Advance(n);
       dec_count += n;
@@ -548,7 +557,10 @@ class TestEncoding : public KuduTest {
       size_t n = to_decode;
       ColumnDataView dst_data(&dst_block, dec_count);
       DCHECK_EQ((unsigned char *)(&decoded[dec_count]), dst_data.data());
-      ASSERT_OK_FAST(ibd.CopyNextValues(&n, &dst_data));
+      SelectionVector sel_vec(n);
+      sel_vec.SetAllTrue();
+      SelectionVectorView sel(&sel_vec);
+      ASSERT_OK_FAST(ibd.CopyNextValues(&n, &sel, &dst_data));
       ASSERT_GE(to_decode, n);
       dec_count += n;
     }
@@ -636,7 +648,10 @@ class TestEncoding : public KuduTest {
       size_t n = to_decode;
       ColumnDataView dst_data(&dst_block, dec_count);
       DCHECK_EQ((unsigned char *)(&decoded[dec_count]), dst_data.data());
-      ASSERT_OK_FAST(bd.CopyNextValues(&n, &dst_data));
+      SelectionVector sel_vec(n);
+      sel_vec.SetAllTrue();
+      SelectionVectorView sel(&sel_vec);
+      ASSERT_OK_FAST(bd.CopyNextValues(&n, &sel, &dst_data));
       ASSERT_GE(to_decode, n);
       dec_count += n;
     }

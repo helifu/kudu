@@ -282,7 +282,7 @@ Status BinaryDictBlockDecoder::CopyNextAndEval(size_t* n,
 
   // IsNotNull predicates should return all data.
   if (ctx->pred()->predicate_type() == PredicateType::IsNotNull) {
-    return CopyNextDecodeStrings(n, dst);
+    return CopyNextDecodeStrings(n, sel, dst);
   }
 
   // Load the rows' codeword values into a buffer for scanning.
@@ -309,7 +309,7 @@ Status BinaryDictBlockDecoder::CopyNextAndEval(size_t* n,
   return Status::OK();
 }
 
-Status BinaryDictBlockDecoder::CopyNextDecodeStrings(size_t* n, ColumnDataView* dst) {
+Status BinaryDictBlockDecoder::CopyNextDecodeStrings(size_t* n, SelectionVectorView* sel, ColumnDataView* dst) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info()->physical_type(), BINARY);
   DCHECK_LE(*n, dst->nrows());
@@ -325,21 +325,21 @@ Status BinaryDictBlockDecoder::CopyNextDecodeStrings(size_t* n, ColumnDataView* 
   BShufBlockDecoder<UINT32>* d_bptr = down_cast<BShufBlockDecoder<UINT32>*>(data_decoder_.get());
   RETURN_NOT_OK(d_bptr->CopyNextValuesToArray(n, codeword_buf_.data()));
 
-  for (int i = 0; i < *n; i++) {
+  for (int i = 0; i < *n; i++, out++) {
+    if (!sel->TestBit(i)) continue;
     uint32_t codeword = *reinterpret_cast<uint32_t*>(&codeword_buf_[i*sizeof(uint32_t)]);
     Slice elem = dict_decoder_->string_at_index(codeword);
     CHECK(out_arena->RelocateSlice(elem, out));
-    out++;
   }
   return Status::OK();
 }
 
-Status BinaryDictBlockDecoder::CopyNextValues(size_t* n, ColumnDataView* dst) {
+Status BinaryDictBlockDecoder::CopyNextValues(size_t* n, SelectionVectorView* sel, ColumnDataView* dst) {
   if (mode_ == kCodeWordMode) {
-    return CopyNextDecodeStrings(n, dst);
+    return CopyNextDecodeStrings(n, sel, dst);
   } else {
     DCHECK_EQ(mode_, kPlainBinaryMode);
-    return data_decoder_->CopyNextValues(n, dst);
+    return data_decoder_->CopyNextValues(n, sel, dst);
   }
 }
 

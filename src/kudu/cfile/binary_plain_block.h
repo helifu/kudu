@@ -96,7 +96,9 @@ class BinaryPlainBlockDecoder final : public BlockDecoder {
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE;
   virtual Status SeekAtOrAfterValue(const void *value,
                                     bool *exact_match) OVERRIDE;
-  Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE;
+  Status CopyNextValues(size_t *n, 
+                        SelectionVectorView* sel,
+                        ColumnDataView *dst) OVERRIDE;
   Status CopyNextAndEval(size_t* n,
                          ColumnMaterializationContext* ctx,
                          SelectionVectorView* sel,

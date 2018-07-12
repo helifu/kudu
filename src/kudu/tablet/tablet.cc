@@ -1637,6 +1637,9 @@ Status Tablet::CaptureConsistentIterators(
                                      rs->ToString()));
     ret.push_back(shared_ptr<RowwiseIterator>(row_it.release()));
   }
+  for (const shared_ptr<RowSet> &rs : components_->rowsets->all_rowsets()) {
+    LOG(INFO) << "capture rowsets:" << rs->ToString();
+  }
 
   // Swap results into the parameters.
   ret.swap(*iters);
@@ -1724,7 +1727,9 @@ Status Tablet::CaptureConsistentIteratorsByIndex(
                           rs->ToString()));
     ret.push_back(shared_ptr<RowwiseIterator>(rs_it.release()));
   }
-
+  for (const RowSet* rs : ret_rowsets) {
+    LOG(INFO) << "capture rowsets:" << rs->ToString();
+  }
   // Swap results into the parameters.
   ret.swap(*iters);
   return Status::OK();
@@ -1792,9 +1797,6 @@ Status Tablet::CaptureRowsetsByColumnPredicate(const ColumnPredicate& predicate,
     }
   default:
     break;
-  }
-  for (const RowSet* rs : *rowsets) {
-    LOG(INFO) << "capture rowsets:" << rs->ToString();
   }
 
   return Status::OK();

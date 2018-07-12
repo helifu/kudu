@@ -166,7 +166,7 @@ class PlainBitMapBlockDecoder final : public BlockDecoder {
     return Status::NotSupported("BOOL keys are not supported!");
   }
 
-  virtual Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE {
+  virtual Status CopyNextValues(size_t *n, SelectionVectorView* sel, ColumnDataView *dst) OVERRIDE {
     DCHECK(parsed_);
     DCHECK_LE(*n, dst->nrows());
     DCHECK_EQ(dst->stride(), sizeof(bool));
