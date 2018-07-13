@@ -206,7 +206,6 @@ Status CFileSet::GetBounds(string* min_encoded_key,
 Status CFileSet::GetColumnBounds(const ColumnId col_id,
                                  std::string* min_encoded_key,
                                  std::string* max_encoded_key) const {
-  //LOG(INFO) << "CFileSet::GetColumnBounds:" << tablet_schema().ToString(); 
   if (!tablet_schema().has_index()) {
     return Status::Corruption("no index in CFileSet.");
   }

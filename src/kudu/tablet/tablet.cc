@@ -1623,6 +1623,7 @@ Status Tablet::CaptureConsistentIterators(
                             Substitute("Could not create iterator for rowset $0",
                                        rs->ToString()));
       ret.push_back(shared_ptr<RowwiseIterator>(row_it.release()));
+      LOG(INFO) << "capture rowsets:" << rs->ToString();
     }
     ret.swap(*iters);
     return Status::OK();
@@ -1636,8 +1637,6 @@ Status Tablet::CaptureConsistentIterators(
                           Substitute("Could not create iterator for rowset $0",
                                      rs->ToString()));
     ret.push_back(shared_ptr<RowwiseIterator>(row_it.release()));
-  }
-  for (const shared_ptr<RowSet> &rs : components_->rowsets->all_rowsets()) {
     LOG(INFO) << "capture rowsets:" << rs->ToString();
   }
 
@@ -1662,37 +1661,43 @@ Status Tablet::CaptureConsistentIteratorsByIndex(
 
   // Cull rowsets in the case of key-range queries.
   vector<RowSet*> key_rowsets;
-  if (spec != nullptr && spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
-    components_->rowsets->FindRowSetsIntersectingInterval(
-        spec->lower_bound_key()->encoded_key(),
-        spec->exclusive_upper_bound_key()->encoded_key(),
-        &key_rowsets);
-  } else {
-    // Grab all of the rowsets.
-    for (const shared_ptr<RowSet> &rs : components_->rowsets->all_rowsets()) {
-      key_rowsets.push_back(rs.get());
+  if (spec != nullptr && (spec->lower_bound_key() || spec->exclusive_upper_bound_key())) {
+    if (spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
+      components_->rowsets->FindRowSetsIntersectingInterval(
+          spec->lower_bound_key()->encoded_key(), 
+          spec->exclusive_upper_bound_key()->encoded_key(),
+          &key_rowsets);
+    } else if (spec->lower_bound_key()) {
+      components_->rowsets->FindRowSetsIntersectingIntervalGE(
+          spec->lower_bound_key()->encoded_key(),
+          &key_rowsets);
+    } else {
+      components_->rowsets->FindRowSetsIntersectingIntervalLT(
+          spec->exclusive_upper_bound_key()->encoded_key(),
+          &key_rowsets);
     }
   }
-  if (key_rowsets.empty()) {
-    ret.swap(*iters);
-    return Status::OK();
+  for (auto& rs : key_rowsets) {
+    LOG(INFO) << "capture key rowsets:" << rs->ToString();
   }
 
   // Cull rowsets in the case of predicates that have index.
-  bool has_index_predicate = false;
   vector<RowSet*> index_rowsets;
   for (const auto& one : spec->predicates()) {
     if (!one.second.column().is_indexed()) continue;
-    has_index_predicate = true;
 
     vector<RowSet*> rowsets;
     RETURN_NOT_OK(CaptureRowsetsByColumnPredicate(one.second, &rowsets));
-    if (rowsets.empty()) break;
+    if (rowsets.empty()) {
+      LOG(INFO) << "predicate of " << one.first << " filters empty rowsets.";
+      index_rowsets.clear();
+      break;
+    }
+
     if (index_rowsets.empty()) {
       index_rowsets = std::move(rowsets);
       continue;
     }
-
     vector<RowSet*> tmp;
     std::sort(rowsets.begin(), rowsets.end());
     std::sort(index_rowsets.begin(), index_rowsets.end());
@@ -1700,24 +1705,28 @@ Status Tablet::CaptureConsistentIteratorsByIndex(
                           index_rowsets.begin(), index_rowsets.end(),
                           back_inserter(tmp));
     index_rowsets = std::move(tmp);
-    if (index_rowsets.empty()) break;
+    if (index_rowsets.empty()) {
+      LOG(INFO) << "intersection of the two vectors is empty.";
+      break;
+    }
+  }
+  for (auto& rs : index_rowsets) {
+    LOG(INFO) << "capture index rowsets:" << rs->ToString();
   }
 
   // Get intersection of key_rowsets and index_rowsets.
   vector<RowSet*> ret_rowsets;
-  if (!has_index_predicate) { // there is no index predicate.
+  if (!key_rowsets.empty() && !index_rowsets.empty()) {
+    std::sort(key_rowsets.begin(), key_rowsets.end());
+    std::sort(index_rowsets.begin(), index_rowsets.end());
+    std::set_intersection(key_rowsets.begin(), key_rowsets.end(),
+                          index_rowsets.begin(), index_rowsets.end(),
+                          back_inserter(ret_rowsets));
+  } else if (!key_rowsets.empty()) {
     ret_rowsets = std::move(key_rowsets);
-  } else {
-    if (!index_rowsets.empty()) {
-      std::sort(key_rowsets.begin(), key_rowsets.end());
-      std::sort(index_rowsets.begin(), index_rowsets.end());
-      std::set_intersection(key_rowsets.begin(), key_rowsets.end(),
-                            index_rowsets.begin(), index_rowsets.end(),
-                            back_inserter(ret_rowsets));
-    } else {
-      // there is no suitable rowset, if the index_rowsets is empty.
-    }
-  }
+  } else if (!index_rowsets.empty()) {
+    ret_rowsets = std::move(index_rowsets);
+  } else {}
 
   // Grab rowset iterators.
   for (const RowSet* rs : ret_rowsets) {
@@ -1726,8 +1735,6 @@ Status Tablet::CaptureConsistentIteratorsByIndex(
                           Substitute("Could not create iterator for rowset $0",
                           rs->ToString()));
     ret.push_back(shared_ptr<RowwiseIterator>(rs_it.release()));
-  }
-  for (const RowSet* rs : ret_rowsets) {
     LOG(INFO) << "capture rowsets:" << rs->ToString();
   }
   // Swap results into the parameters.
@@ -1760,11 +1767,14 @@ Status Tablet::CaptureRowsetsByColumnPredicate(const ColumnPredicate& predicate,
         key_encoder->ResetAndEncode(predicate.raw_lower(), &enc_lower);
         key_encoder->ResetAndEncode(predicate.raw_upper(), &enc_upper);
         components_->rowsets->FindRowSetsIntersectingInterval(col_id, enc_lower, enc_upper, rowsets);
+      } else if (predicate.raw_lower()) {
+        faststring enc_lower;
+        key_encoder->ResetAndEncode(predicate.raw_lower(), &enc_lower);
+        components_->rowsets->FindRowSetsIntersectingIntervalGE(col_id, enc_lower, rowsets);
       } else {
-        // TODO: we could support open-ended intervals later.
-        for (const std::shared_ptr<RowSet>& rs : all_rowsets) {
-          rowsets->emplace_back(rs.get());
-        }
+        faststring enc_upper;
+        key_encoder->ResetAndEncode(predicate.raw_upper(), &enc_upper);
+        components_->rowsets->FindRowSetsIntersectingIntervalLT(col_id, enc_upper, rowsets);
       }
       break;
     }
@@ -2279,8 +2289,10 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
 
   vector<shared_ptr<RowwiseIterator>> iters;
   if (!tablet_->HasIndexColumnInPredicates(spec)) {
+    LOG(INFO) << "CaptureConsistentIterators ...";
     RETURN_NOT_OK(tablet_->CaptureConsistentIterators(&projection_, snap_, spec, order_, &iters));
   } else {
+    LOG(INFO) << "CaptureConsistentIteratorsByIndex ...";
     RETURN_NOT_OK(tablet_->CaptureConsistentIteratorsByIndex(&projection_, snap_, spec, order_, &iters));
   }
 

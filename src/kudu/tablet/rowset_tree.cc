@@ -195,7 +195,6 @@ Status RowSetTree::ResetIndexTree(const Schema& schema, const RowSetVector& rows
                      << s.ToString();
         return s;
       }
-      LOG(INFO) << "get the bounds for " << rs->ToString();
       iter->second->endpoints.push_back(RSEndpoint(entry->rowset, START, entry->min_key));
       iter->second->endpoints.push_back(RSEndpoint(entry->rowset, STOP,  entry->max_key));
       iter->second->entries.push_back(entry.release());
@@ -227,6 +226,36 @@ void RowSetTree::FindRowSetsIntersectingInterval(const Slice &lower_bound,
   vector<RowSetWithBounds *> from_tree;
   from_tree.reserve(all_rowsets_.size());
   tree_->FindIntersectingInterval(&query, &from_tree);
+  rowsets->reserve(rowsets->size() + from_tree.size());
+  for (RowSetWithBounds *rs : from_tree) {
+    rowsets->push_back(rs->rowset);
+  }
+}
+
+void RowSetTree::FindRowSetsIntersectingIntervalGE(const Slice& lower_bound,
+                                                   std::vector<RowSet*> *rowsets) const {
+  DCHECK(initted_);
+  for (const shared_ptr<RowSet> &rs : unbounded_rowsets_) {
+    rowsets->push_back(rs.get());
+  }
+  vector<RowSetWithBounds*> from_tree;
+  from_tree.reserve(all_rowsets_.size());
+  tree_->FindIntersectingIntervalGE(lower_bound, &from_tree);
+  rowsets->reserve(rowsets->size() + from_tree.size());
+  for (RowSetWithBounds *rs : from_tree) {
+    rowsets->push_back(rs->rowset);
+  }
+}
+
+void RowSetTree::FindRowSetsIntersectingIntervalLT(const Slice& upper_bound,
+                                                   std::vector<RowSet*> *rowsets) const {
+  DCHECK(initted_);
+  for (const shared_ptr<RowSet> &rs : unbounded_rowsets_) {
+    rowsets->push_back(rs.get());
+  }
+  vector<RowSetWithBounds*> from_tree;
+  from_tree.reserve(all_rowsets_.size());
+  tree_->FindIntersectingIntervalLT(upper_bound, &from_tree);
   rowsets->reserve(rowsets->size() + from_tree.size());
   for (RowSetWithBounds *rs : from_tree) {
     rowsets->push_back(rs->rowset);
@@ -288,12 +317,12 @@ void RowSetTree::FindRowSetsIntersectingInterval(const ColumnId& col_id,
                                                  const Slice &upper_bound,
                                                  std::vector<RowSet *> *rowsets) const {
   DCHECK(initted_);
-
   ColumnIdToIndexTreeMap::const_iterator iter = col_id_to_index_tree_.find(col_id);
   if (iter == col_id_to_index_tree_.end()) {
     LOG(WARNING) << "can not find the index tree for column:" << col_id;
     return;
   }
+
   for (const shared_ptr<RowSet>& rs : iter->second->unbounded_rowsets) {
     rowsets->push_back(rs.get());
   }
@@ -305,6 +334,53 @@ void RowSetTree::FindRowSetsIntersectingInterval(const ColumnId& col_id,
   vector<RowSetWithBounds*> from_tree;
   from_tree.reserve(all_rowsets_.size());
   iter->second->tree->FindIntersectingInterval(&query, &from_tree);
+  rowsets->reserve(rowsets->size() + from_tree.size());
+  for (RowSetWithBounds *rs : from_tree) {
+    rowsets->push_back(rs->rowset);
+  }
+}
+
+
+void RowSetTree::FindRowSetsIntersectingIntervalGE(const ColumnId& col_id,
+                                                   const Slice& lower_bound,
+                                                   std::vector<RowSet*> *rowsets) const {
+  DCHECK(initted_);
+  ColumnIdToIndexTreeMap::const_iterator iter = col_id_to_index_tree_.find(col_id);
+  if (iter == col_id_to_index_tree_.end()) {
+    LOG(WARNING) << "can not find the index tree for column:" << col_id;
+    return;
+  }
+
+  for (const shared_ptr<RowSet> &rs : unbounded_rowsets_) {
+    rowsets->push_back(rs.get());
+  }
+
+  vector<RowSetWithBounds*> from_tree;
+  from_tree.reserve(all_rowsets_.size());
+  iter->second->tree->FindIntersectingIntervalGE(lower_bound, &from_tree);
+  rowsets->reserve(rowsets->size() + from_tree.size());
+  for (RowSetWithBounds *rs : from_tree) {
+    rowsets->push_back(rs->rowset);
+  }
+}
+
+void RowSetTree::FindRowSetsIntersectingIntervalLT(const ColumnId& col_id,
+                                                   const Slice& upper_bound,
+                                                   std::vector<RowSet*> *rowsets) const {
+  DCHECK(initted_);
+  ColumnIdToIndexTreeMap::const_iterator iter = col_id_to_index_tree_.find(col_id);
+  if (iter == col_id_to_index_tree_.end()) {
+    LOG(WARNING) << "can not find the index tree for column:" << col_id;
+    return;
+  }
+
+  for (const shared_ptr<RowSet> &rs : unbounded_rowsets_) {
+    rowsets->push_back(rs.get());
+  }
+
+  vector<RowSetWithBounds*> from_tree;
+  from_tree.reserve(all_rowsets_.size());
+  iter->second->tree->FindIntersectingIntervalLT(upper_bound, &from_tree);
   rowsets->reserve(rowsets->size() + from_tree.size());
   for (RowSetWithBounds *rs : from_tree) {
     rowsets->push_back(rs->rowset);
