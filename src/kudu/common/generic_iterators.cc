@@ -512,7 +512,7 @@ Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
   // been deleted.
   RETURN_NOT_OK(iter_->InitializeSelectionVector(dst->selection_vector()));
   if (!dst->selection_vector()->AnySelected()) {
-    LOG(INFO) << "0/" << dst->nrows() << " before evaluation";
+    DVLOG(1) << "0/" << dst->nrows() << " skipped predicate";
     return Status::OK();
   }
 
@@ -551,8 +551,8 @@ Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
     RETURN_NOT_OK(iter_->MaterializeColumn(&ctx));
   }
 
-  LOG(INFO) << dst->selection_vector()->CountSelected() << "/"
-            << dst->nrows() << " passed predicate, "
+  DVLOG(1) << dst->selection_vector()->CountSelected() << "/"
+           << dst->nrows() << " passed predicate";
   return Status::OK();
 }
 
