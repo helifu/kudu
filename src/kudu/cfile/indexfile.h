@@ -91,8 +91,8 @@ public:
 
   Status NewIterator(Iterator** iter);
 
-  Status GetColumnBounds(std::string* min_encoded_key,
-                         std::string* max_encoded_key) const;
+  Status GetIndexBounds(std::string* min_encoded_key,
+                        std::string* max_encoded_key) const;
 
   ~CIndexFileReader();
 
@@ -144,9 +144,9 @@ public:
 
   Status NewIterator(Iterator** iter) const;
 
-  Status GetColumnBounds(const ColumnId& col_id,
-                         std::string* min_encoded_key,
-                         std::string* max_encoded_key) const;
+  Status GetIndexBounds(const ColumnId& col_id,
+                        std::string* min_encoded_key,
+                        std::string* max_encoded_key) const;
 
   ~CMultiIndexFileReader();
 
@@ -179,8 +179,8 @@ public:
   }
   inline void InitializeSelectionVector(rowid_t cur_idx, SelectionVector *sel_vec) {
     uint32_t* arr = arr_.get();
-    for (; arr_i_ < c_card_; ++arr_i_) {
-      if (arr[arr_i_] > (cur_idx+sel_vec->nrows())) break;
+    for (; arr_i_ < arr_n_; ++arr_i_) {
+      if (PREDICT_FALSE(arr[arr_i_] >= (cur_idx+sel_vec->nrows()))) break;
       sel_vec->SetRowSelected(arr[arr_i_] - cur_idx);
       //LOG(INFO) << "set row selected:" << arr[arr_i_] - cur_idx;
     }
@@ -201,10 +201,12 @@ private:
   ColumnIdToReaderIterMap reader_iters_;
 
   // bHasResult_ equals to false: the result is empty definitively.
-  // bHasResult_ equals to true : maybe the c_ is still empty when the only one predicate is IsNotNull.
+  // bHasResult_ equals to true : maybe the c_ is still empty when
+  //    1) the only one predicate is IsNotNull;
+  //    2) the only one predicate has no index yet;
   bool bHasResult_;
   Roaring c_;
-  uint64_t c_card_;
+  uint64_t arr_n_;
   uint64_t arr_i_;
   std::unique_ptr<uint32_t> arr_;
 };

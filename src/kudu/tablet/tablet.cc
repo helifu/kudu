@@ -898,7 +898,9 @@ void Tablet::ModifyRowSetTree(const Schema& schema,
             std::back_inserter(post_swap));
 
   CHECK_OK(new_tree->Reset(post_swap));
-  CHECK_OK(new_tree->ResetIndexTree(schema, post_swap));
+  if (schema.has_index()) {
+    CHECK_OK(new_tree->ResetIndexTree(schema, post_swap));
+  }
 }
 
 void Tablet::AtomicSwapRowSets(const RowSetVector &old_rowsets,
@@ -1637,7 +1639,7 @@ Status Tablet::CaptureConsistentIterators(
                           Substitute("Could not create iterator for rowset $0",
                                      rs->ToString()));
     ret.push_back(shared_ptr<RowwiseIterator>(row_it.release()));
-    LOG(INFO) << "capture rowsets:" << rs->ToString();
+    //LOG(INFO) << "capture rowsets:" << rs->ToString();
   }
 
   // Swap results into the parameters.
@@ -1677,9 +1679,9 @@ Status Tablet::CaptureConsistentIteratorsByIndex(
           &key_rowsets);
     }
   }
-  for (auto& rs : key_rowsets) {
+  /*for (auto& rs : key_rowsets) {
     LOG(INFO) << "capture key rowsets:" << rs->ToString();
-  }
+  }*/
 
   // Cull rowsets in the case of predicates that have index.
   vector<RowSet*> index_rowsets;
@@ -1710,9 +1712,9 @@ Status Tablet::CaptureConsistentIteratorsByIndex(
       break;
     }
   }
-  for (auto& rs : index_rowsets) {
+  /*for (auto& rs : index_rowsets) {
     LOG(INFO) << "capture index rowsets:" << rs->ToString();
-  }
+  }*/
 
   // Get intersection of key_rowsets and index_rowsets.
   vector<RowSet*> ret_rowsets;
@@ -1735,7 +1737,7 @@ Status Tablet::CaptureConsistentIteratorsByIndex(
                           Substitute("Could not create iterator for rowset $0",
                           rs->ToString()));
     ret.push_back(shared_ptr<RowwiseIterator>(rs_it.release()));
-    LOG(INFO) << "capture rowsets:" << rs->ToString();
+    //LOG(INFO) << "capture rowsets:" << rs->ToString();
   }
   // Swap results into the parameters.
   ret.swap(*iters);
@@ -1747,8 +1749,8 @@ Status Tablet::CaptureRowsetsByColumnPredicate(const ColumnPredicate& predicate,
   const TypeInfo* type_info = predicate.column().type_info();
   const KeyEncoder<faststring>* key_encoder = &GetKeyEncoder<faststring>(type_info);
   const ColumnId col_id = schema()->column_id(schema()->find_column(predicate.column().name()));
-  LOG(INFO) << "capture rowsets by column id:" << col_id
-            << ", predicate type:" << (int)(predicate.predicate_type());
+  /*LOG(INFO) << "capture rowsets by column id:" << col_id
+            << ", predicate type:" << (int)(predicate.predicate_type());*/
 
   const RowSetVector& all_rowsets = components_->rowsets->all_rowsets();
   switch (predicate.predicate_type())

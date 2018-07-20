@@ -153,10 +153,11 @@ class RowSetTree {
 
   // Secondary Index.
   struct IndexTreeStruct {
-    gscoped_ptr<IntervalTree<RowSetIntervalTraits>> tree;
+    RowSetVector unbounded_rowsets;
     std::vector<RSEndpoint> endpoints;
     std::vector<RowSetWithBounds*> entries;
-    RowSetVector unbounded_rowsets;
+    std::vector<gscoped_ptr<RowSetWithBounds> > entries_deleter;
+    gscoped_ptr<IntervalTree<RowSetIntervalTraits>> tree;
   };
   typedef boost::container::flat_map<ColumnId, std::unique_ptr<IndexTreeStruct>> ColumnIdToIndexTreeMap;
   ColumnIdToIndexTreeMap col_id_to_index_tree_;

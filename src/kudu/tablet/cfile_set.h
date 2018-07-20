@@ -69,9 +69,9 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   // See RowSet::GetBounds
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const;
-  virtual Status GetColumnBounds(const ColumnId col_id,
-                                 std::string* min_encoded_key,
-                                 std::string* max_encoded_key) const;
+  virtual Status GetIndexBounds(const ColumnId col_id,
+                                std::string* min_encoded_key,
+                                std::string* max_encoded_key) const;
 
   uint64_t EstimateOnDiskSize() const;
 

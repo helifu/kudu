@@ -1719,6 +1719,11 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
                                          step.drop_column().name());
         }
 
+        if (cur_schema.has_index()) {
+          return Status::InvalidArgument("cannot remove an index column, drop index first",
+                                         step.drop_column().name());
+        }
+
         RETURN_NOT_OK(builder.RemoveColumn(step.drop_column().name()));
         break;
       }

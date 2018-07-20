@@ -125,9 +125,8 @@ Status CFileSet::DoOpen() {
   RETURN_NOT_OK(LoadMinMaxKeys());
 
   // Open the index blocks.
-  // the reader should always be fully opened, so that we can figure
-  // out where in the rowset tree we belong.
-  if (tablet_schema().has_index()) {
+  // Maybe the index is created in process, skip it.
+  if (tablet_schema().has_index() && rowset_metadata_->GetIndexBlocksById().size()) {
     RETURN_NOT_OK(CMultiIndexFileReader::Open(rowset_metadata_,
           parent_mem_tracker_, &index_reader_));
   }
@@ -203,14 +202,13 @@ Status CFileSet::GetBounds(string* min_encoded_key,
   return Status::OK();
 }
 
-Status CFileSet::GetColumnBounds(const ColumnId col_id,
-                                 std::string* min_encoded_key,
-                                 std::string* max_encoded_key) const {
-  if (!tablet_schema().has_index()) {
-    return Status::Corruption("no index in CFileSet.");
+Status CFileSet::GetIndexBounds(const ColumnId col_id,
+                                std::string* min_encoded_key,
+                                std::string* max_encoded_key) const {
+  if (index_reader_) {
+    return index_reader_->GetIndexBounds(col_id, min_encoded_key, max_encoded_key);
   }
-
-  return index_reader_->GetColumnBounds(col_id, min_encoded_key, max_encoded_key);
+  return Status::NotFound("there is no index in the cfile, so the bounds are unlimited."); 
 }
 
 uint64_t CFileSet::EstimateOnDiskSize() const {
@@ -279,7 +277,10 @@ Status CFileSet::NewKeyIterator(CFileIterator **key_iter) const {
 }
 
 Status CFileSet::NewIndexIterator(CMultiIndexFileReader::Iterator** index_iter) const {
-  return index_reader_->NewIterator(index_iter);
+  if (index_reader_) {
+    return index_reader_->NewIterator(index_iter);
+  }
+  return Status::NotFound("there is no index in the cfile, so the index iterator is nullptr."); 
 }
 
 ////////////////////////////////////////////////////////////
@@ -430,23 +431,28 @@ Status CFileSet::Iterator::CreateAndInitIndexIterators(ScanSpec* spec) {
   
   // Create Index Iterator.
   CMultiIndexFileReader::Iterator* iter;
-  RETURN_NOT_OK(base_data_->NewIndexIterator(&iter));
+  Status s = base_data_->NewIndexIterator(&iter);
+  if (s.IsNotFound()) {
+    LOG(INFO) << s.ToString();
+    return Status::OK();
+  }
+  RETURN_NOT_OK(s);
   index_iter_.reset(iter);
 
   // Init iterators.
   RETURN_NOT_OK(index_iter_->Init(projection_, spec));
 
-  LOG(INFO) << "1.lower_bound_idx:" << lower_bound_idx_ << ", upper_bound_idx:" << upper_bound_idx_;
+  //LOG(INFO) << "1.lower_bound_idx:" << lower_bound_idx_ << ", upper_bound_idx:" << upper_bound_idx_ << " " << ToString();
   rowid_t lower_idx = lower_bound_idx_;
   rowid_t upper_idx = upper_bound_idx_;
-  Status s = index_iter_->GetBounds(&lower_idx, &upper_idx);
+  s = index_iter_->GetBounds(&lower_idx, &upper_idx);
   if (s.IsNotFound()) {
     lower_bound_idx_ = upper_bound_idx_;
   } else {
     lower_bound_idx_ = std::max(lower_bound_idx_, lower_idx);
     upper_bound_idx_ = std::min(upper_bound_idx_, upper_idx);
   }
-  LOG(INFO) << "2.lower_bound_idx:" << lower_bound_idx_ << ", upper_bound_idx:" << upper_bound_idx_;
+  //LOG(INFO) << "2.lower_bound_idx:" << lower_bound_idx_ << ", upper_bound_idx:" << upper_bound_idx_ << " " << ToString();
   return Status::OK();
 }
 
@@ -508,9 +514,7 @@ Status CFileSet::Iterator::PrepareColumn(ColumnMaterializationContext *ctx) {
 
 Status CFileSet::Iterator::InitializeSelectionVector(SelectionVector *sel_vec) {
   // Skip the unnecessary row_idx according to index.
-  if (projection_->has_index() 
-    && index_iter_.get() != nullptr
-    && index_iter_->HasValidBitmap()) {
+  if (projection_->has_index() && index_iter_ && index_iter_->HasValidBitmap()) {
     sel_vec->SetAllFalse();
     index_iter_->InitializeSelectionVector(cur_idx_, sel_vec);
   } else {

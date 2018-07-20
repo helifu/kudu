@@ -289,8 +289,12 @@ class ColumnSchema {
       if (write_default_ != NULL && !write_default_->Equals(other.write_default_.get()))
         return false;
     }
-    if ((flags & COMPARE_INDEX) && this->index_name_ != other.index_name_) {
-      return false;
+    if (flags & COMPARE_INDEX) {
+      // Changing index name will not change index property.
+      if ((this->index_name_.empty() && !other.index_name_.empty())
+          || (!this->index_name_.empty() && other.index_name_.empty())) {
+        return false;
+      }
     }
     return true;
   }

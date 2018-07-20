@@ -400,8 +400,8 @@ Status CIndexFileReader::NewIterator(Iterator** iter) {
   return Status::OK();
 }
 
-Status CIndexFileReader::GetColumnBounds(std::string* min_encoded_key,
-                                         std::string* max_encoded_key) const {
+Status CIndexFileReader::GetIndexBounds(std::string* min_encoded_key,
+                                        std::string* max_encoded_key) const {
   *min_encoded_key = min_encoded_key_;
   *max_encoded_key = max_encoded_key_;
   return Status::OK();
@@ -458,8 +458,8 @@ Status CIndexFileReader::Iterator::Pushdown(const ColumnPredicate& predicate, Ro
 Status CIndexFileReader::Iterator::PushdownEquaility(const ColumnSchema& col_schema,
                                                      const vector<const void*>& values,
                                                      Roaring& r) {
-  LOG(INFO) << "Equality for column '" << col_schema.name() 
-            << "' with " << values.size() << " values.";
+  /*LOG(INFO) << "Equality for column '" << col_schema.name() 
+            << "' with " << values.size() << " values.";*/
   size_t n = 1;
   Arena arena(1024, 1*1024*1024);
   const KeyEncoder<faststring>* key_encoder = &GetKeyEncoder<faststring>(col_schema.type_info());
@@ -513,7 +513,7 @@ Status CIndexFileReader::Iterator::PushdownEquaility(const ColumnSchema& col_sch
 Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
                                                  const ColumnPredicate& predicate,
                                                  Roaring& r) {
-  LOG(INFO) << "Range for column '" << col_schema.type_info()->name() << "'";
+  //LOG(INFO) << "Range for column '" << col_schema.type_info()->name() << "'";
   rowid_t lower_bound_id = 0;
   rowid_t upper_bound_id = UINT_MAX;
   reader_->key_reader_->CountRows(&upper_bound_id);
@@ -643,23 +643,24 @@ Status CMultiIndexFileReader::NewIterator(Iterator** iter) const {
   return Status::OK();
 }
 
-Status CMultiIndexFileReader::GetColumnBounds(const ColumnId& col_id,
+Status CMultiIndexFileReader::GetIndexBounds(const ColumnId& col_id,
                                              std::string* min_encoded_key,
                                              std::string* max_encoded_key) const {
   ColumnIdToReaderMap::const_iterator iter = readers_.find(col_id);
   if (iter == readers_.end()) {
-    LOG(WARNING) << "can not find the reader for " << col_id;
-    return Status::NotSupported("can not find reader");
+    const Schema& schema = rowset_metadata_->tablet_metadata()->schema();
+    //LOG(INFO) << "the column " << schema.column_by_id(col_id).name() << " has no index yet.";
+    return Status::NotFound("the column has no index yet");
   }
 
-  return iter->second->GetColumnBounds(min_encoded_key, max_encoded_key);
+  return iter->second->GetIndexBounds(min_encoded_key, max_encoded_key);
 }
 
 //////////////////////////////////////////////////////////////////////////
 CMultiIndexFileReader::Iterator::Iterator(const CMultiIndexFileReader* reader)
   : reader_(reader)
   , bHasResult_(true)
-  , c_card_(0)
+  , arr_n_(0)
   , arr_i_(0) {
 }
 
@@ -677,8 +678,9 @@ Status CMultiIndexFileReader::Iterator::Init(const Schema* projection, ScanSpec*
     const ColumnId& col_id = projection->column_id(col_idx);
     ColumnIdToReaderMap::const_iterator iter = reader_->readers_.find(col_id);
     if (iter == reader_->readers_.end()) {
-      LOG(ERROR) << "can not find the reader for column_id" << col_id;
-      return Status::RuntimeError("can not find reader");
+      // There is no index for the column while the index creation is later than cfile.
+      //LOG(INFO) << "the column " << one.first << " has no index yet.";
+      continue;
     }
 
     // Create and init the iterator for the reader.
@@ -696,7 +698,7 @@ Status CMultiIndexFileReader::Iterator::Init(const Schema* projection, ScanSpec*
     }
     RETURN_NOT_OK(s);
     if (c.isEmpty()) {
-      LOG(INFO) << "predicate of "<< one.first << " can not filter any rows, so the result is zero.";
+      //LOG(INFO) << "predicate of "<< one.first << " can not filter any rows, so the result is zero.";
       bHasResult_ = false;
       break;
     }
@@ -707,7 +709,7 @@ Status CMultiIndexFileReader::Iterator::Init(const Schema* projection, ScanSpec*
     } else {
       c_ &= c; // Logic AND.
       if (c_.isEmpty()) {
-        LOG(INFO) << "the intersection of the two bitmaps is empty.";
+        //LOG(INFO) << "the intersection of the two bitmaps is empty.";
         bHasResult_ = false;
         break;
       }
@@ -726,8 +728,8 @@ Status CMultiIndexFileReader::Iterator::Init(const Schema* projection, ScanSpec*
 
   // Prepare for traversal.
   if (bHasResult_ && !c_.isEmpty()) {
-    c_card_ = c_.cardinality();
-    uint32_t* arr = new uint32_t[c_card_];
+    arr_n_ = c_.cardinality();
+    uint32_t* arr = new uint32_t[arr_n_];
     CHECK(arr);
     c_.toUint32Array(arr);
     arr_.reset(arr);
@@ -738,11 +740,12 @@ Status CMultiIndexFileReader::Iterator::Init(const Schema* projection, ScanSpec*
 
 Status CMultiIndexFileReader::Iterator::GetBounds(rowid_t* lower_bound_idx,
                                                   rowid_t* upper_bound_idx) {
-  if (!bHasResult_) return Status::NotFound("");
+  if (!bHasResult_) return Status::NotFound("the result is empty");
   if (!c_.isEmpty()) {
     uint32_t* arr = arr_.get();
     *lower_bound_idx = arr[0];
-    *upper_bound_idx = arr[c_card_-1] + 1; // Exclusive.
+    *upper_bound_idx = arr[arr_n_-1] + 1; // Exclusive.
+    //LOG(INFO) << c_.toString() << " " << reader_->rowset_metadata_->ToString();
   }
   return Status::OK();
 }
