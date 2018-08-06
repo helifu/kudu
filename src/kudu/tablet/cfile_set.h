@@ -69,9 +69,6 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   // See RowSet::GetBounds
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const;
-  virtual Status GetIndexBounds(const ColumnId col_id,
-                                std::string* min_encoded_key,
-                                std::string* max_encoded_key) const;
 
   uint64_t EstimateOnDiskSize() const;
 
@@ -156,6 +153,8 @@ class CFileSet::Iterator : public ColumnwiseIterator {
 
   virtual Status Init(ScanSpec *spec) OVERRIDE;
 
+  Status Init_Index(ScanSpec *spec, const DeltaStats& stats);
+
   virtual Status PrepareBatch(size_t *nrows) OVERRIDE;
 
   virtual Status InitializeSelectionVector(SelectionVector *sel_vec) OVERRIDE;
@@ -209,9 +208,6 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   // column's index. If such a predicate exists, remove it from the scan spec and
   // store it in member fields.
   Status PushdownRangeScanPredicate(ScanSpec *spec);
-
-  // Create and init the index iterator.
-  Status CreateAndInitIndexIterators(ScanSpec* spec);
 
   void Unprepare();
 

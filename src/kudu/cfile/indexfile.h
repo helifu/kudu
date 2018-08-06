@@ -18,6 +18,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/tablet/rowset_metadata.h"
+#include "kudu/tablet/delta_stats.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/once.h"
 #include "kudu/util/status.h"
@@ -29,6 +30,7 @@ using kudu::fs::WritableBlock;
 using kudu::fs::ReadableBlock;
 using kudu::fs::ScopedWritableBlockCloser;
 using kudu::tablet::RowSetMetadata;
+using kudu::tablet::DeltaStats;
 
 class CIndexFileWriter {
 public:
@@ -40,7 +42,7 @@ public:
   Status FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer);
   size_t written_size() const;
 
-  void GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) const;
+  Status GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) const;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(CIndexFileWriter);
@@ -49,6 +51,7 @@ private:
 
   FsManager* fs_;
   const ColumnSchema* col_schema_;
+  bool has_finished_;
 
   BlockId key_block_id_;
   BlockId bitmap_block_id_;
@@ -65,8 +68,10 @@ public:
   ~CMultiIndexFileWriter();
 
   Status Open();
-  Status AppendBlock(const RowBlock& block);
-  Status FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer);
+  Status AppendBlock(const DeltaStats* redo_delta_stats,
+                     const RowBlock& block);
+  Status FinishAndReleaseBlocks(const DeltaStats* redo_delta_stats,
+                                ScopedWritableBlockCloser* closer);
   size_t written_size() const;
 
   void GetFlushedBlocksByColumnId(std::map<ColumnId, std::pair<BlockId, BlockId> >* ret) const;
@@ -90,9 +95,6 @@ public:
                      std::unique_ptr<CIndexFileReader>* reader);
 
   Status NewIterator(Iterator** iter);
-
-  Status GetIndexBounds(std::string* min_encoded_key,
-                        std::string* max_encoded_key) const;
 
   ~CIndexFileReader();
 
@@ -144,10 +146,6 @@ public:
 
   Status NewIterator(Iterator** iter) const;
 
-  Status GetIndexBounds(const ColumnId& col_id,
-                        std::string* min_encoded_key,
-                        std::string* max_encoded_key) const;
-
   ~CMultiIndexFileReader();
 
 private:
@@ -169,7 +167,7 @@ private:
 class CMultiIndexFileReader::Iterator {
 public:
 
-  Status Init(const Schema* projection, ScanSpec* spec);
+  Status Init(ScanSpec* spec, const Schema* projection, const DeltaStats& stats);
   Status GetBounds(rowid_t* lower_bound_idx, rowid_t* upper_bound_idx);
 
   inline bool HasValidBitmap() const {

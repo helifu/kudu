@@ -137,6 +137,22 @@ string DeltaIteratorMerger::ToString() const {
   return ret;
 }
 
+const DeltaStats& DeltaIteratorMerger::GetDeltaStats() const {
+  /* Sequence: undo delta file iterator +
+               redo delta file iterator +
+               delta memory iterator
+     skip undo delta file iterator */
+  DeltaStats stats;
+  for (const unique_ptr<DeltaIterator> &iter : iters_) {
+    if (iter->GetDeltaIteratorType() == ITERATOR_DRS_UNDO) continue;
+    stats += iter->GetDeltaStats();
+  }
+  return std::move(stats);
+}
+
+const DeltaIteratorType DeltaIteratorMerger::GetDeltaIteratorType() const {
+  return ITERATOR_MGR;
+}
 
 Status DeltaIteratorMerger::Create(
     const vector<shared_ptr<DeltaStore> > &stores,

@@ -68,12 +68,13 @@ class HistoryGcOpts;
 class MultiColumnWriter;
 class Mutation;
 class OperationResultPB;
+class RollingDiskRowSetWriter;
 
 class DiskRowSetWriter {
  public:
   // TODO: document ownership of rowset_metadata
   DiskRowSetWriter(RowSetMetadata* rowset_metadata, const Schema* schema,
-                   BloomFilterSizing bloom_sizing);
+                   BloomFilterSizing bloom_sizing, const RollingDiskRowSetWriter* parent = nullptr);
 
   ~DiskRowSetWriter();
 
@@ -126,6 +127,7 @@ class DiskRowSetWriter {
 
   RowSetMetadata *rowset_metadata_;
   const Schema* const schema_;
+  const RollingDiskRowSetWriter *parent_;
 
   BloomFilterSizing bloom_sizing_;
 
@@ -206,6 +208,8 @@ class RollingDiskRowSetWriter {
   uint64_t written_size() const { return written_size_; }
 
  private:
+  friend class DiskRowSetWriter;
+
   Status RollWriter();
 
   // Close the current DRS and delta writers, releasing their finished blocks
@@ -334,10 +338,6 @@ class DiskRowSet : public RowSet {
   // See RowSet::GetBounds(...)
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const OVERRIDE;
-
-  virtual Status GetIndexBounds(const ColumnId& col_id,
-                                std::string* min_encoded_key,
-                                std::string* max_encoded_key) const OVERRIDE;
 
   // Estimate the number of bytes on-disk for the base data.
   uint64_t EstimateBaseDataDiskSize() const;

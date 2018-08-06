@@ -66,7 +66,6 @@ class RowSetTree {
 
   RowSetTree();
   Status Reset(const RowSetVector &rowsets);
-  Status ResetIndexTree(const Schema& schema, const RowSetVector& rowsets);
   ~RowSetTree();
 
   // Return all RowSets whose range may contain the given encoded key.
@@ -92,24 +91,6 @@ class RowSetTree {
   void FindRowSetsIntersectingIntervalGE(const Slice& lower_bound,
                                          std::vector<RowSet*> *rowsets) const;
   void FindRowSetsIntersectingIntervalLT(const Slice& upper_bound,
-                                         std::vector<RowSet*> *rowsets) const;
-
-  // Find rowsets according to index predicate.
-  void FindRowSetsWithKeyInRange(const ColumnId& col_id,
-                                 const Slice& encoded_key,
-                                 std::vector<RowSet *> *rowsets) const;
-  void ForEachRowSetContainingKeys(const ColumnId& col_id,
-                                   const std::vector<Slice>& encoded_keys,
-                                   const std::function<void(RowSet*, int)>& cb) const;
-  void FindRowSetsIntersectingInterval(const ColumnId& col_id,
-                                       const Slice &lower_bound,
-                                       const Slice &upper_bound,
-                                       std::vector<RowSet *> *rowsets) const;
-  void FindRowSetsIntersectingIntervalGE(const ColumnId& col_id,
-                                         const Slice& lower_bound,
-                                         std::vector<RowSet*> *rowsets) const;
-  void FindRowSetsIntersectingIntervalLT(const ColumnId& col_id,
-                                         const Slice& upper_bound,
                                          std::vector<RowSet*> *rowsets) const;
 
   const RowSetVector &all_rowsets() const { return all_rowsets_; }
@@ -150,17 +131,6 @@ class RowSetTree {
   // These have to be consulted for every access, so are not
   // stored in the interval tree.
   RowSetVector unbounded_rowsets_;
-
-  // Secondary Index.
-  struct IndexTreeStruct {
-    RowSetVector unbounded_rowsets;
-    std::vector<RSEndpoint> endpoints;
-    std::vector<RowSetWithBounds*> entries;
-    std::vector<gscoped_ptr<RowSetWithBounds> > entries_deleter;
-    gscoped_ptr<IntervalTree<RowSetIntervalTraits>> tree;
-  };
-  typedef boost::container::flat_map<ColumnId, std::unique_ptr<IndexTreeStruct>> ColumnIdToIndexTreeMap;
-  ColumnIdToIndexTreeMap col_id_to_index_tree_;
 
   bool initted_;
 };

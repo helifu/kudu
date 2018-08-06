@@ -77,9 +77,11 @@ const char *DiskRowSet::kMaxKeyMetaEntryName = "max_key";
 
 DiskRowSetWriter::DiskRowSetWriter(RowSetMetadata* rowset_metadata,
                                    const Schema* schema,
-                                   BloomFilterSizing bloom_sizing)
+                                   BloomFilterSizing bloom_sizing,
+                                   const RollingDiskRowSetWriter* parent)
     : rowset_metadata_(rowset_metadata),
       schema_(schema),
+      parent_(parent),
       bloom_sizing_(std::move(bloom_sizing)),
       finished_(false),
       written_count_(0) {
@@ -183,7 +185,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
 
   // Write the batch to index data
   if (schema_->has_index()) {
-    RETURN_NOT_OK(index_writer_->AppendBlock(block));
+    RETURN_NOT_OK(index_writer_->AppendBlock(parent_->cur_redo_delta_stats.get(), block));
   }
 
 #ifndef NDEBUG
@@ -258,7 +260,7 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   // Finish Index data.
   if (schema_->has_index()) {
     // Finish writing the index data.
-    RETURN_NOT_OK(index_writer_->FinishAndReleaseBlocks(closer));
+    RETURN_NOT_OK(index_writer_->FinishAndReleaseBlocks(parent_->cur_redo_delta_stats.get(), closer));
 
     // Put the index data blocks in the metadata.
     std::map<ColumnId, std::pair<BlockId, BlockId> > index_flushed_blocks;
@@ -348,7 +350,7 @@ Status RollingDiskRowSetWriter::RollWriter() {
 
   RETURN_NOT_OK(tablet_metadata_->CreateRowSet(&cur_drs_metadata_, schema_));
 
-  cur_writer_.reset(new DiskRowSetWriter(cur_drs_metadata_.get(), &schema_, bloom_sizing_));
+  cur_writer_.reset(new DiskRowSetWriter(cur_drs_metadata_.get(), &schema_, bloom_sizing_, this));
   RETURN_NOT_OK(cur_writer_->Open());
 
   FsManager* fs = tablet_metadata_->fs_manager();
@@ -709,14 +711,6 @@ Status DiskRowSet::GetBounds(std::string* min_encoded_key,
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_);
   return base_data_->GetBounds(min_encoded_key, max_encoded_key);
-}
-
-Status DiskRowSet::GetIndexBounds(const ColumnId& col_id,
-                                   std::string* min_encoded_key,
-                                   std::string* max_encoded_key) const {
-  DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_);
-  return base_data_->GetIndexBounds(col_id, min_encoded_key, max_encoded_key);
 }
 
 uint64_t DiskRowSet::EstimateBaseDataDiskSize() const {

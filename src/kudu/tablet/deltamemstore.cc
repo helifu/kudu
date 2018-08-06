@@ -382,5 +382,15 @@ string DMSIterator::ToString() const {
   return "DMSIterator";
 }
 
+const DeltaStats& DMSIterator::GetDeltaStats() const {
+  DCHECK(initted_) << "Must call Init()";
+  return dms_->delta_stats();
+}
+
+const DeltaIteratorType DMSIterator::GetDeltaIteratorType() const {
+  DCHECK(initted_) << "Must call Init()";
+  return ITERATOR_DMS;
+}
+
 } // namespace tablet
 } // namespace kudu

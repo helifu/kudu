@@ -202,15 +202,6 @@ Status CFileSet::GetBounds(string* min_encoded_key,
   return Status::OK();
 }
 
-Status CFileSet::GetIndexBounds(const ColumnId col_id,
-                                std::string* min_encoded_key,
-                                std::string* max_encoded_key) const {
-  if (index_reader_) {
-    return index_reader_->GetIndexBounds(col_id, min_encoded_key, max_encoded_key);
-  }
-  return Status::NotFound("there is no index in the cfile, so the bounds are unlimited."); 
-}
-
 uint64_t CFileSet::EstimateOnDiskSize() const {
   uint64_t ret = 0;
   for (const auto& e : readers_by_col_id_) {
@@ -343,15 +334,62 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
   // ordinal range.
   RETURN_NOT_OK(PushdownRangeScanPredicate(spec));
 
-  // Setup Index Iterators and init.
-  RETURN_NOT_OK(CreateAndInitIndexIterators(spec));
-
   initted_ = true;
 
   // Don't actually seek -- we'll seek when we first actually read the
   // data.
   cur_idx_ = lower_bound_idx_;
   Unprepare(); // Reset state.
+  return Status::OK();
+}
+
+Status CFileSet::Iterator::Init_Index(ScanSpec *spec, const DeltaStats& stats) {
+  if (!projection_->has_index()) return Status::OK();
+
+  // Skip if there is delete mutation.
+  if (stats.delete_count()) return Status::OK();
+
+  // Check the column in predicates with DeltaStats.
+  bool valid_index = false;
+  for (const auto& one : spec->predicates()) {
+    /* Skip the non-index column */
+    if (!one.second.column().is_indexed()) continue;
+    /* Skip if there is update mutation on this column */
+    int col_idx = projection_->find_column(one.first);
+    const ColumnId& col_id = projection_->column_id(col_idx);
+    if (stats.update_count_for_col_id(col_id) != 0) continue;
+
+    valid_index = true;
+    break;
+  }
+  // Skip if there is no valid index.
+  if (!valid_index) return Status::OK();
+
+  // Create Index Iterator.
+  CMultiIndexFileReader::Iterator* iter;
+  Status s = base_data_->NewIndexIterator(&iter);
+  if (s.IsNotFound()) {
+    LOG(INFO) << s.ToString();
+    return Status::OK();
+  }
+  RETURN_NOT_OK(s);
+  index_iter_.reset(iter);
+
+  // Init iterators.
+  RETURN_NOT_OK(index_iter_->Init(spec, projection_, stats));
+
+  //LOG(INFO) << "1.lower_bound_idx:" << lower_bound_idx_ << ", upper_bound_idx:" << upper_bound_idx_ << " " << ToString();
+  rowid_t lower_idx = lower_bound_idx_;
+  rowid_t upper_idx = upper_bound_idx_;
+  s = index_iter_->GetBounds(&lower_idx, &upper_idx);
+  if (s.IsNotFound()) {
+    lower_bound_idx_ = upper_bound_idx_;
+  } else {
+    lower_bound_idx_ = std::max(lower_bound_idx_, lower_idx);
+    upper_bound_idx_ = std::min(upper_bound_idx_, upper_idx);
+  }
+  //LOG(INFO) << "2.lower_bound_idx:" << lower_bound_idx_ << ", upper_bound_idx:" << upper_bound_idx_ << " " << ToString();
+  cur_idx_ = lower_bound_idx_;
   return Status::OK();
 }
 
@@ -412,47 +450,6 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
               << " as row_idx < " << upper_bound_idx_;
     }
   }
-  return Status::OK();
-}
-
-Status CFileSet::Iterator::CreateAndInitIndexIterators(ScanSpec* spec) {
-  if (!projection_->has_index()) return Status::OK();
-
-  // Check whether there is index column in predicates.
-  bool hasIndexColumn = false;
-  for (const auto& one : spec->predicates()) {
-    if (one.second.column().is_indexed()) {
-      hasIndexColumn = true;
-      break;
-    }
-  }
-  // Skip if there is no index column in predicates.
-  if (!hasIndexColumn) return Status::OK();
-  
-  // Create Index Iterator.
-  CMultiIndexFileReader::Iterator* iter;
-  Status s = base_data_->NewIndexIterator(&iter);
-  if (s.IsNotFound()) {
-    LOG(INFO) << s.ToString();
-    return Status::OK();
-  }
-  RETURN_NOT_OK(s);
-  index_iter_.reset(iter);
-
-  // Init iterators.
-  RETURN_NOT_OK(index_iter_->Init(projection_, spec));
-
-  //LOG(INFO) << "1.lower_bound_idx:" << lower_bound_idx_ << ", upper_bound_idx:" << upper_bound_idx_ << " " << ToString();
-  rowid_t lower_idx = lower_bound_idx_;
-  rowid_t upper_idx = upper_bound_idx_;
-  s = index_iter_->GetBounds(&lower_idx, &upper_idx);
-  if (s.IsNotFound()) {
-    lower_bound_idx_ = upper_bound_idx_;
-  } else {
-    lower_bound_idx_ = std::max(lower_bound_idx_, lower_idx);
-    upper_bound_idx_ = std::min(upper_bound_idx_, upper_idx);
-  }
-  //LOG(INFO) << "2.lower_bound_idx:" << lower_bound_idx_ << ", upper_bound_idx:" << upper_bound_idx_ << " " << ToString();
   return Status::OK();
 }
 

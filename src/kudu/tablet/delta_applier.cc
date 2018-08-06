@@ -45,6 +45,11 @@ DeltaApplier::~DeltaApplier() {
 Status DeltaApplier::Init(ScanSpec *spec) {
   RETURN_NOT_OK(base_iter_->Init(spec));
   RETURN_NOT_OK(delta_iter_->Init(spec));
+
+  /* init index if there is index in schema */
+  if (schema().has_index()) {
+    RETURN_NOT_OK(base_iter_->Init_Index(spec, delta_iter_->GetDeltaStats()));
+  }
   return Status::OK();
 }
 

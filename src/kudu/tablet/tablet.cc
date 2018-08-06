@@ -252,7 +252,6 @@ Status Tablet::Open() {
 
   shared_ptr<RowSetTree> new_rowset_tree(new RowSetTree());
   CHECK_OK(new_rowset_tree->Reset(rowsets_opened));
-  CHECK_OK(new_rowset_tree->ResetIndexTree(metadata_->schema(), rowsets_opened));
   // now that the current state is loaded, create the new MemRowSet with the next id
   shared_ptr<MemRowSet> new_mrs;
   RETURN_NOT_OK(MemRowSet::Create(next_mrs_id_++, *schema(),
@@ -898,9 +897,6 @@ void Tablet::ModifyRowSetTree(const Schema& schema,
             std::back_inserter(post_swap));
 
   CHECK_OK(new_tree->Reset(post_swap));
-  if (schema.has_index()) {
-    CHECK_OK(new_tree->ResetIndexTree(schema, post_swap));
-  }
 }
 
 void Tablet::AtomicSwapRowSets(const RowSetVector &old_rowsets,
@@ -1609,23 +1605,28 @@ Status Tablet::CaptureConsistentIterators(
   ret.push_back(shared_ptr<RowwiseIterator>(ms_iter.release()));
 
   // Cull row-sets in the case of key-range queries.
-  if (spec != nullptr && spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
-    // TODO : support open-ended intervals
-    // TODO: the upper bound key is exclusive, but the RowSetTree function takes
-    // an inclusive interval. So, we might end up fetching one more rowset than
-    // necessary.
+  if (spec != nullptr && (spec->lower_bound_key() || spec->exclusive_upper_bound_key())) {
     vector<RowSet *> interval_sets;
-    components_->rowsets->FindRowSetsIntersectingInterval(
-        spec->lower_bound_key()->encoded_key(),
+    if (spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
+      components_->rowsets->FindRowSetsIntersectingInterval(
+        spec->lower_bound_key()->encoded_key(), 
         spec->exclusive_upper_bound_key()->encoded_key(),
         &interval_sets);
+    } else if (spec->lower_bound_key()) {
+      components_->rowsets->FindRowSetsIntersectingIntervalGE(
+        spec->lower_bound_key()->encoded_key(),
+        &interval_sets);
+    } else {
+      components_->rowsets->FindRowSetsIntersectingIntervalLT(
+        spec->exclusive_upper_bound_key()->encoded_key(),
+        &interval_sets);
+    }
     for (const RowSet *rs : interval_sets) {
       gscoped_ptr<RowwiseIterator> row_it;
       RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, order, &row_it),
                             Substitute("Could not create iterator for rowset $0",
-                                       rs->ToString()));
+                            rs->ToString()));
       ret.push_back(shared_ptr<RowwiseIterator>(row_it.release()));
-      LOG(INFO) << "capture rowsets:" << rs->ToString();
     }
     ret.swap(*iters);
     return Status::OK();
@@ -1639,178 +1640,10 @@ Status Tablet::CaptureConsistentIterators(
                           Substitute("Could not create iterator for rowset $0",
                                      rs->ToString()));
     ret.push_back(shared_ptr<RowwiseIterator>(row_it.release()));
-    //LOG(INFO) << "capture rowsets:" << rs->ToString();
   }
 
   // Swap results into the parameters.
   ret.swap(*iters);
-  return Status::OK();
-}
-
-Status Tablet::CaptureConsistentIteratorsByIndex(
-  const Schema *projection,
-  const MvccSnapshot &snap,
-  const ScanSpec *spec,
-  OrderMode order,
-  vector<std::shared_ptr<RowwiseIterator> > *iters) const {
-  shared_lock<rw_spinlock> l(component_lock_);
-  vector<shared_ptr<RowwiseIterator> > ret;
-
-  // Grab the memrowset iterator.
-  gscoped_ptr<RowwiseIterator> ms_iter;
-  RETURN_NOT_OK(components_->memrowset->NewRowIterator(projection, snap, order, &ms_iter));
-  ret.push_back(shared_ptr<RowwiseIterator>(ms_iter.release()));
-
-  // Cull rowsets in the case of key-range queries.
-  vector<RowSet*> key_rowsets;
-  if (spec != nullptr && (spec->lower_bound_key() || spec->exclusive_upper_bound_key())) {
-    if (spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
-      components_->rowsets->FindRowSetsIntersectingInterval(
-          spec->lower_bound_key()->encoded_key(), 
-          spec->exclusive_upper_bound_key()->encoded_key(),
-          &key_rowsets);
-    } else if (spec->lower_bound_key()) {
-      components_->rowsets->FindRowSetsIntersectingIntervalGE(
-          spec->lower_bound_key()->encoded_key(),
-          &key_rowsets);
-    } else {
-      components_->rowsets->FindRowSetsIntersectingIntervalLT(
-          spec->exclusive_upper_bound_key()->encoded_key(),
-          &key_rowsets);
-    }
-  }
-  /*for (auto& rs : key_rowsets) {
-    LOG(INFO) << "capture key rowsets:" << rs->ToString();
-  }*/
-
-  // Cull rowsets in the case of predicates that have index.
-  vector<RowSet*> index_rowsets;
-  for (const auto& one : spec->predicates()) {
-    if (!one.second.column().is_indexed()) continue;
-
-    vector<RowSet*> rowsets;
-    RETURN_NOT_OK(CaptureRowsetsByColumnPredicate(one.second, &rowsets));
-    if (rowsets.empty()) {
-      LOG(INFO) << "predicate of " << one.first << " filters empty rowsets.";
-      index_rowsets.clear();
-      break;
-    }
-
-    if (index_rowsets.empty()) {
-      index_rowsets = std::move(rowsets);
-      continue;
-    }
-    vector<RowSet*> tmp;
-    std::sort(rowsets.begin(), rowsets.end());
-    std::sort(index_rowsets.begin(), index_rowsets.end());
-    std::set_intersection(rowsets.begin(), rowsets.end(), 
-                          index_rowsets.begin(), index_rowsets.end(),
-                          back_inserter(tmp));
-    index_rowsets = std::move(tmp);
-    if (index_rowsets.empty()) {
-      LOG(INFO) << "intersection of the two vectors is empty.";
-      break;
-    }
-  }
-  /*for (auto& rs : index_rowsets) {
-    LOG(INFO) << "capture index rowsets:" << rs->ToString();
-  }*/
-
-  // Get intersection of key_rowsets and index_rowsets.
-  vector<RowSet*> ret_rowsets;
-  if (!key_rowsets.empty() && !index_rowsets.empty()) {
-    std::sort(key_rowsets.begin(), key_rowsets.end());
-    std::sort(index_rowsets.begin(), index_rowsets.end());
-    std::set_intersection(key_rowsets.begin(), key_rowsets.end(),
-                          index_rowsets.begin(), index_rowsets.end(),
-                          back_inserter(ret_rowsets));
-  } else if (!key_rowsets.empty()) {
-    ret_rowsets = std::move(key_rowsets);
-  } else if (!index_rowsets.empty()) {
-    ret_rowsets = std::move(index_rowsets);
-  } else {}
-
-  // Grab rowset iterators.
-  for (const RowSet* rs : ret_rowsets) {
-    gscoped_ptr<RowwiseIterator> rs_it;
-    RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, order, &rs_it),
-                          Substitute("Could not create iterator for rowset $0",
-                          rs->ToString()));
-    ret.push_back(shared_ptr<RowwiseIterator>(rs_it.release()));
-    //LOG(INFO) << "capture rowsets:" << rs->ToString();
-  }
-  // Swap results into the parameters.
-  ret.swap(*iters);
-  return Status::OK();
-}
-
-Status Tablet::CaptureRowsetsByColumnPredicate(const ColumnPredicate& predicate,
-                                               vector<RowSet*>* rowsets) const {
-  const TypeInfo* type_info = predicate.column().type_info();
-  const KeyEncoder<faststring>* key_encoder = &GetKeyEncoder<faststring>(type_info);
-  const ColumnId col_id = schema()->column_id(schema()->find_column(predicate.column().name()));
-  /*LOG(INFO) << "capture rowsets by column id:" << col_id
-            << ", predicate type:" << (int)(predicate.predicate_type());*/
-
-  const RowSetVector& all_rowsets = components_->rowsets->all_rowsets();
-  switch (predicate.predicate_type())
-  {
-  case PredicateType::Equality:
-    {
-      faststring enc_key;
-      key_encoder->ResetAndEncode(predicate.raw_lower(), &enc_key);
-      components_->rowsets->FindRowSetsWithKeyInRange(col_id, enc_key, rowsets);
-      break;
-    }
-  case PredicateType::Range:
-    {
-      if (predicate.raw_lower() && predicate.raw_upper()) {
-        faststring enc_lower, enc_upper;
-        key_encoder->ResetAndEncode(predicate.raw_lower(), &enc_lower);
-        key_encoder->ResetAndEncode(predicate.raw_upper(), &enc_upper);
-        components_->rowsets->FindRowSetsIntersectingInterval(col_id, enc_lower, enc_upper, rowsets);
-      } else if (predicate.raw_lower()) {
-        faststring enc_lower;
-        key_encoder->ResetAndEncode(predicate.raw_lower(), &enc_lower);
-        components_->rowsets->FindRowSetsIntersectingIntervalGE(col_id, enc_lower, rowsets);
-      } else {
-        faststring enc_upper;
-        key_encoder->ResetAndEncode(predicate.raw_upper(), &enc_upper);
-        components_->rowsets->FindRowSetsIntersectingIntervalLT(col_id, enc_upper, rowsets);
-      }
-      break;
-    }
-  case PredicateType::IsNotNull:
-    {
-      for (const std::shared_ptr<RowSet>& rs : all_rowsets) {
-        rowsets->emplace_back(rs.get());
-      }
-      break;
-    }
-  case PredicateType::IsNull:
-    break;
-  case PredicateType::InList:
-    {
-      std::vector<string> enc_values;
-      for (const void* value : predicate.raw_values()) {
-        faststring enc_value;
-        key_encoder->ResetAndEncode(value, &enc_value);
-        string enc_value_str(reinterpret_cast<const char*>(enc_value.data()), enc_value.size());
-        enc_values.push_back(std::move(enc_value_str));
-      }
-      std::vector<Slice> enc_keys;
-      for (const string& enc_value : enc_values) {
-        enc_keys.push_back(enc_value);
-      }
-      std::set<RowSet*> rs_sets;
-      components_->rowsets->ForEachRowSetContainingKeys(col_id, enc_keys, [&](RowSet* rs, int i) { rs_sets.insert(rs);});
-      rowsets->insert(rowsets->end(), rs_sets.begin(), rs_sets.end());
-      break;
-    }
-  default:
-    break;
-  }
-
   return Status::OK();
 }
 
@@ -2290,13 +2123,8 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(tablet_->GetMappedReadProjection(projection_, &projection_));
 
   vector<shared_ptr<RowwiseIterator>> iters;
-  if (!tablet_->HasIndexColumnInPredicates(spec)) {
-    LOG(INFO) << "CaptureConsistentIterators ...";
-    RETURN_NOT_OK(tablet_->CaptureConsistentIterators(&projection_, snap_, spec, order_, &iters));
-  } else {
-    LOG(INFO) << "CaptureConsistentIteratorsByIndex ...";
-    RETURN_NOT_OK(tablet_->CaptureConsistentIteratorsByIndex(&projection_, snap_, spec, order_, &iters));
-  }
+
+  RETURN_NOT_OK(tablet_->CaptureConsistentIterators(&projection_, snap_, spec, order_, &iters));
 
   switch (order_) {
     case ORDERED:

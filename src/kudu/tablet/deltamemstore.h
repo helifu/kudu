@@ -203,7 +203,8 @@ class DMSIterator : public DeltaIterator {
   string ToString() const OVERRIDE;
 
   virtual bool HasNext() OVERRIDE;
-
+  virtual const DeltaStats& GetDeltaStats() const OVERRIDE;
+  virtual const DeltaIteratorType GetDeltaIteratorType() const OVERRIDE;
   bool MayHaveDeltas() override;
 
  private:

@@ -465,15 +465,6 @@ class Tablet {
                                     OrderMode order,
                                     vector<std::shared_ptr<RowwiseIterator> > *iters) const;
 
-  // Capture a set of iterators if there is index column in predicates.
-  Status CaptureConsistentIteratorsByIndex(const Schema *projection,
-                                           const MvccSnapshot &snap,
-                                           const ScanSpec *spec,
-                                           OrderMode order,
-                                           vector<std::shared_ptr<RowwiseIterator> > *iters) const;
-  Status CaptureRowsetsByColumnPredicate(const ColumnPredicate& predicate,
-                                         vector<RowSet*>* rowsets) const;
-
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,
                               CompactFlags flags) const;
 

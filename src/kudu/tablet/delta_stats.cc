@@ -139,6 +139,14 @@ void DeltaStats::AddColumnIdsWithUpdates(std::set<ColumnId>* col_ids) const {
   }
 }
 
+DeltaStats& DeltaStats::operator+=(const DeltaStats& one) {
+  for (const auto& e : one.update_counts_by_col_id_) {
+    this->update_counts_by_col_id_[e.first] += e.second;
+  }
+  this->delete_count_ += one.delete_count_;
+  this->reinsert_count_ += one.reinsert_count_;
+  return *this;
+}
 
 } // namespace tablet
 } // namespace kudu

@@ -59,6 +59,8 @@ class DeltaIteratorMerger : public DeltaIterator {
   virtual bool HasNext() OVERRIDE;
   bool MayHaveDeltas() override;
   virtual std::string ToString() const OVERRIDE;
+  virtual const DeltaStats& GetDeltaStats() const OVERRIDE;
+  virtual const DeltaIteratorType GetDeltaIteratorType() const OVERRIDE;
 
  private:
   explicit DeltaIteratorMerger(vector<std::unique_ptr<DeltaIterator> > iters);

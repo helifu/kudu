@@ -146,10 +146,6 @@ class MockRowSet : public RowSet {
   virtual bool IsAvailableForCompaction() OVERRIDE {
     return true;
   }
-  virtual Status GetIndexBounds(const ColumnId& col_id,
-    std::string* min_encoded_key, std::string* max_encoded_key) const OVERRIDE {
-    return Status::NotSupported("");
-  }
 };
 
 // Mock which implements GetBounds() with constant provided bonuds.

@@ -109,7 +109,8 @@ void DebugEntry(const ColumnSchema* col_schema, const char* val) {
 
 CIndexFileWriter::CIndexFileWriter(FsManager* fs, const ColumnSchema* col_schema)
 : fs_(fs)
-, col_schema_(col_schema) {
+, col_schema_(col_schema)
+, has_finished_(false) {
 }
 
 CIndexFileWriter::~CIndexFileWriter() {
@@ -241,20 +242,24 @@ Status CIndexFileWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
             << "' with size("<< key_writer_->written_size()
             << "," << bitmap_writer_->written_size() << ")";
 
+  has_finished_ = true;
   return Status::OK();
 }
 
 size_t CIndexFileWriter::written_size() const {
+  if (!has_finished_) return 0;
   return key_writer_->written_size() +
          bitmap_writer_->written_size();
 }
 
-void CIndexFileWriter::GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) const {
+Status CIndexFileWriter::GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) const {
+  if (!has_finished_) return Status::Aborted("not finished");;
   CHECK(!key_block_id_.IsNull());
   CHECK(!bitmap_block_id_.IsNull());
 
   ret.first = key_block_id_;
   ret.second = bitmap_block_id_;
+  return Status::OK();
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -283,14 +288,15 @@ Status CMultiIndexFileWriter::Open() {
   return Status::OK();
 }
 
-Status CMultiIndexFileWriter::AppendBlock(const RowBlock& block) {
+Status CMultiIndexFileWriter::AppendBlock(const DeltaStats* redo_delta_stats, const RowBlock& block) {
+  if (redo_delta_stats->delete_count() != 0) return Status::OK();
   for (int i = 0; i < schema_->num_columns(); ++i) {
     if (schema_->column(i).is_indexed()) {
+      if (redo_delta_stats->update_count_for_col_id(schema_->column_id(i)) != 0) continue;
       const ColumnId& col_id = schema_->column_id(i);
       CIndexFileWriter* writer = FindOrDie(writers_, col_id).get();
       const ColumnBlock& column_block = block.column_block(i);
-      RETURN_NOT_OK(writer->Append(written_count_, 
-            column_block.data(), column_block.nrows()));
+      RETURN_NOT_OK(writer->Append(written_count_, column_block.data(), column_block.nrows()));
     }
   }
 
@@ -298,9 +304,11 @@ Status CMultiIndexFileWriter::AppendBlock(const RowBlock& block) {
   return Status::OK();
 }
 
-Status CMultiIndexFileWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer) {
+Status CMultiIndexFileWriter::FinishAndReleaseBlocks(const DeltaStats* redo_delta_stats, ScopedWritableBlockCloser* closer) {
+  if (redo_delta_stats->delete_count() != 0) return Status::OK();
   for (int i = 0; i < schema_->num_columns(); ++i) {
     if (schema_->column(i).is_indexed()) {
+      if (redo_delta_stats->update_count_for_col_id(schema_->column_id(i)) != 0) continue;
       const ColumnId& col_id = schema_->column_id(i);
       CIndexFileWriter* writer = FindOrDie(writers_, col_id).get();
       RETURN_NOT_OK(writer->FinishAndReleaseBlocks(closer));
@@ -329,7 +337,9 @@ void CMultiIndexFileWriter::GetFlushedBlocksByColumnId(
       const ColumnId& col_id = schema_->column_id(i);
       CIndexFileWriter* writer = FindOrDie(writers_, col_id).get();
       std::pair<BlockId, BlockId> one;
-      writer->GetFlushedBlocks(one);
+      Status s = writer->GetFlushedBlocks(one);
+      if (s.IsAborted()) continue;
+      CHECK(s.ok());
       ret->insert(std::map<ColumnId, std::pair<BlockId, BlockId> >
         ::value_type(col_id, std::move(one)));
     }
@@ -397,13 +407,6 @@ Status CIndexFileReader::Open(FsManager* fs,
 
 Status CIndexFileReader::NewIterator(Iterator** iter) {
   *iter = new Iterator(this);
-  return Status::OK();
-}
-
-Status CIndexFileReader::GetIndexBounds(std::string* min_encoded_key,
-                                        std::string* max_encoded_key) const {
-  *min_encoded_key = min_encoded_key_;
-  *max_encoded_key = max_encoded_key_;
   return Status::OK();
 }
 
@@ -643,19 +646,6 @@ Status CMultiIndexFileReader::NewIterator(Iterator** iter) const {
   return Status::OK();
 }
 
-Status CMultiIndexFileReader::GetIndexBounds(const ColumnId& col_id,
-                                             std::string* min_encoded_key,
-                                             std::string* max_encoded_key) const {
-  ColumnIdToReaderMap::const_iterator iter = readers_.find(col_id);
-  if (iter == readers_.end()) {
-    const Schema& schema = rowset_metadata_->tablet_metadata()->schema();
-    //LOG(INFO) << "the column " << schema.column_by_id(col_id).name() << " has no index yet.";
-    return Status::NotFound("the column has no index yet");
-  }
-
-  return iter->second->GetIndexBounds(min_encoded_key, max_encoded_key);
-}
-
 //////////////////////////////////////////////////////////////////////////
 CMultiIndexFileReader::Iterator::Iterator(const CMultiIndexFileReader* reader)
   : reader_(reader)
@@ -667,18 +657,20 @@ CMultiIndexFileReader::Iterator::Iterator(const CMultiIndexFileReader* reader)
 CMultiIndexFileReader::Iterator::~Iterator() {
 }
 
-Status CMultiIndexFileReader::Iterator::Init(const Schema* projection, ScanSpec* spec) {
+Status CMultiIndexFileReader::Iterator::Init(ScanSpec* spec, const Schema* projection, const DeltaStats& stats) {
   std::vector<std::string> col_names;
   for (const auto& one : spec->predicates()) {
-    // Skip the non-index column.
     if (!one.second.column().is_indexed()) continue;
-
-    // Find the reader according to column id.
     int col_idx = projection->find_column(one.first);
     const ColumnId& col_id = projection->column_id(col_idx);
+    if (stats.update_count_for_col_id(col_id) != 0) continue;
+
+    // Find the reader according to column id.
     ColumnIdToReaderMap::const_iterator iter = reader_->readers_.find(col_id);
     if (iter == reader_->readers_.end()) {
-      // There is no index for the column while the index creation is later than cfile.
+      // There is no index for the column:
+      //  1) the index creation is later than cfile;
+      //  2) the index is invalid while there are mutations;
       //LOG(INFO) << "the column " << one.first << " has no index yet.";
       continue;
     }

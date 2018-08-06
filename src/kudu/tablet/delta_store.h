@@ -116,6 +116,13 @@ struct DeltaKeyAndUpdate {
   std::string Stringify(DeltaType type, const Schema& schema, bool pad_key = false) const;
 };
 
+enum DeltaIteratorType {
+  ITERATOR_DMS,
+  ITERATOR_DRS_REDO,
+  ITERATOR_DRS_UNDO,
+  ITERATOR_MGR
+};
+
 class DeltaIterator {
  public:
   // Initialize the iterator. This must be called once before any other
@@ -186,6 +193,12 @@ class DeltaIterator {
 
   // Return a string representation suitable for debug printouts.
   virtual std::string ToString() const = 0;
+
+  // Return delta stats.
+  virtual const DeltaStats& GetDeltaStats() const = 0;
+
+  // Return delta iterator type.
+  virtual const DeltaIteratorType GetDeltaIteratorType() const = 0;
 
   virtual ~DeltaIterator() {}
 };

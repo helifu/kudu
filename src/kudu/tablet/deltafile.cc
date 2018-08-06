@@ -849,6 +849,19 @@ string DeltaFileIterator::ToString() const {
   return "DeltaFileIterator(" + dfr_->ToString() + ")";
 }
 
+const DeltaStats& DeltaFileIterator::GetDeltaStats() const {
+  DCHECK(initted_) << "Must call Init()";
+  Status s = dfr_->Init();
+  if (!s.ok()) {
+    LOG(FATAL) << "Failed to init delta file reader:" << s.ToString();
+  }
+  return dfr_->delta_stats();
+}
+
+const DeltaIteratorType DeltaFileIterator::GetDeltaIteratorType() const {
+  return delta_type_ == REDO ? ITERATOR_DRS_REDO : ITERATOR_DRS_UNDO;
+}
+
 struct FilterAndAppendVisitor {
 
   Status Visit(const DeltaKey& key, const Slice& deltas, bool* continue_visit) {
