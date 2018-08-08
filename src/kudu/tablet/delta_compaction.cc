@@ -212,6 +212,12 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
     }
     redo_delta_mutations_written_ += out.size();
     nrows += n;
+
+    // 7) Write the new index data if necessary.
+    if (partial_schema_.has_index()) {
+      if (!index_data_writer_) RETURN_NOT_OK(OpenIndexDataWriter());
+      RETURN_NOT_OK(index_data_writer_->AppendBlock(&redo_stats, block));
+    }
   }
 
   RETURN_NOT_OK(base_data_writer_->Finish());
@@ -224,6 +230,10 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
   if (undo_delta_mutations_written_ > 0) {
     new_undo_delta_writer_->WriteDeltaStats(undo_stats);
     RETURN_NOT_OK(new_undo_delta_writer_->Finish());
+  }
+
+  if (partial_schema_.has_index() && index_data_writer_) {
+    RETURN_NOT_OK(index_data_writer_->Finish(&redo_stats));
   }
 
   DVLOG(1) << "Applied all outstanding deltas for columns "
@@ -263,6 +273,13 @@ Status MajorDeltaCompaction::OpenUndoDeltaFileWriter() {
   new_undo_delta_block_ = block->id();
   new_undo_delta_writer_.reset(new DeltaFileWriter(std::move(block)));
   return new_undo_delta_writer_->Start();
+}
+
+Status MajorDeltaCompaction::OpenIndexDataWriter() {
+  CHECK(partial_schema_.has_index());
+  index_data_writer_.reset(new cfile::CMultiIndexFileWriter(fs_manager_, &partial_schema_));
+  RETURN_NOT_OK(index_data_writer_->Open());
+  return Status::OK();
 }
 
 Status MajorDeltaCompaction::Compact() {
@@ -331,6 +348,12 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
         update->RemoveColumnId(col_id);
       }
     }
+  }
+
+  if (partial_schema_.has_index() && index_data_writer_) {
+    std::map<ColumnId, std::pair<BlockId, BlockId> > index_blocks;
+    index_data_writer_->GetFlushedBlocksByColumnId(&index_blocks);
+    if (!index_blocks.empty()) update->SetIndexBlocks(index_blocks);
   }
 
   return Status::OK();

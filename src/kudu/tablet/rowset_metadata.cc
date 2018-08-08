@@ -270,6 +270,15 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
       CHECK_EQ(1, blocks_by_col_id_.erase(col_id));
       removed.push_back(old);
     }
+
+    // Replace index blocks.
+    for (const auto& e : update.index_blocks_) {
+      std::pair<BlockId, BlockId> old;
+      if (UpdateReturnCopy(&index_blocks_by_col_id_, e.first, e.second, &old)) {
+        removed.push_back(old.first);
+        removed.push_back(old.second);
+      }
+    }
   }
 
   blocks_by_col_id_.shrink_to_fit();
@@ -343,5 +352,10 @@ RowSetMetadataUpdate& RowSetMetadataUpdate::SetNewUndoBlock(const BlockId& undo_
   return *this;
 }
 
+RowSetMetadataUpdate& RowSetMetadataUpdate::SetIndexBlocks(
+    const std::map<ColumnId, std::pair<BlockId, BlockId> >& index_blocks) {
+  index_blocks_ = std::move(index_blocks);
+  return *this;
+}
 } // namespace tablet
 } // namespace kudu

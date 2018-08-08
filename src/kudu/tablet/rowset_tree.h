@@ -21,8 +21,6 @@
 #include <vector>
 #include <utility>
 
-#include <boost/container/flat_map.hpp>
-
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/util/status.h"

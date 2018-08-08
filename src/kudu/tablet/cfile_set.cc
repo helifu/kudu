@@ -344,10 +344,14 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
 }
 
 Status CFileSet::Iterator::Init_Index(ScanSpec *spec, const DeltaStats& stats) {
-  if (!projection_->has_index()) return Status::OK();
+  CHECK(projection_->has_index());
 
   // Skip if there is delete mutation.
-  if (stats.delete_count()) return Status::OK();
+  LOG(INFO) << base_data_->ToString() << "," << stats.ToString();
+  if (stats.delete_count()) {
+    LOG(INFO) << "Cannot use index because of delete flag";
+    return Status::OK();
+  }
 
   // Check the column in predicates with DeltaStats.
   bool valid_index = false;
@@ -357,13 +361,19 @@ Status CFileSet::Iterator::Init_Index(ScanSpec *spec, const DeltaStats& stats) {
     /* Skip if there is update mutation on this column */
     int col_idx = projection_->find_column(one.first);
     const ColumnId& col_id = projection_->column_id(col_idx);
-    if (stats.update_count_for_col_id(col_id) != 0) continue;
+    if (stats.update_count_for_col_id(col_id) != 0) {
+      LOG(INFO) << "Cannot use index on " << one.first << " because of update flag";
+      continue;
+    }
 
     valid_index = true;
     break;
   }
   // Skip if there is no valid index.
-  if (!valid_index) return Status::OK();
+  if (!valid_index) {
+    LOG(INFO) << "Cannot use index because of invalid index";
+    return Status::OK();
+  }
 
   // Create Index Iterator.
   CMultiIndexFileReader::Iterator* iter;

@@ -195,7 +195,7 @@ class DeltaIterator {
   virtual std::string ToString() const = 0;
 
   // Return delta stats.
-  virtual const DeltaStats& GetDeltaStats() const = 0;
+  virtual DeltaStats GetDeltaStats() const = 0;
 
   // Return delta iterator type.
   virtual const DeltaIteratorType GetDeltaIteratorType() const = 0;

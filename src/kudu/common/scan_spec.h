@@ -120,6 +120,9 @@ class ScanSpec {
 
   std::string ToString(const Schema& s) const;
 
+  // Return whether there is index column in ScanSpec.
+  bool has_index() const;
+
  private:
 
   // Lift implicit predicates specified as part of the lower and upper bound

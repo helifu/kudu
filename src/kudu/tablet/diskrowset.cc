@@ -265,7 +265,7 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
     // Put the index data blocks in the metadata.
     std::map<ColumnId, std::pair<BlockId, BlockId> > index_flushed_blocks;
     index_writer_->GetFlushedBlocksByColumnId(&index_flushed_blocks);
-    rowset_metadata_->SetIndexDataBlocks(index_flushed_blocks);
+    if (!index_flushed_blocks.empty()) rowset_metadata_->SetIndexDataBlocks(index_flushed_blocks);
   }
 
   if (ad_hoc_index_writer_ != nullptr) {

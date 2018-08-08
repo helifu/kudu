@@ -160,7 +160,7 @@ class DeltaMemStore : public DeltaStore,
 
   log::MinLogIndexAnchorer anchorer_;
 
-  const DeltaStats delta_stats_;
+  DeltaStats delta_stats_;
 
   // It's possible for multiple mutations to apply to the same row
   // in the same timestamp (e.g. if a batch contains multiple updates for that
@@ -203,7 +203,7 @@ class DMSIterator : public DeltaIterator {
   string ToString() const OVERRIDE;
 
   virtual bool HasNext() OVERRIDE;
-  virtual const DeltaStats& GetDeltaStats() const OVERRIDE;
+  virtual DeltaStats GetDeltaStats() const OVERRIDE;
   virtual const DeltaIteratorType GetDeltaIteratorType() const OVERRIDE;
   bool MayHaveDeltas() override;
 

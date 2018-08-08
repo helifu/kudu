@@ -137,7 +137,7 @@ string DeltaIteratorMerger::ToString() const {
   return ret;
 }
 
-const DeltaStats& DeltaIteratorMerger::GetDeltaStats() const {
+DeltaStats DeltaIteratorMerger::GetDeltaStats() const {
   /* Sequence: undo delta file iterator +
                redo delta file iterator +
                delta memory iterator
@@ -146,6 +146,7 @@ const DeltaStats& DeltaIteratorMerger::GetDeltaStats() const {
   for (const unique_ptr<DeltaIterator> &iter : iters_) {
     if (iter->GetDeltaIteratorType() == ITERATOR_DRS_UNDO) continue;
     stats += iter->GetDeltaStats();
+    LOG(INFO) << iter->GetDeltaStats().ToString();
   }
   return std::move(stats);
 }

@@ -105,7 +105,7 @@ Status DeltaMemStore::Update(Timestamp timestamp,
   }
 
   anchorer_.AnchorIfMinimum(op_id.index());
-
+  delta_stats_.UpdateStats(timestamp, update);
   return Status::OK();
 }
 
@@ -382,7 +382,7 @@ string DMSIterator::ToString() const {
   return "DMSIterator";
 }
 
-const DeltaStats& DMSIterator::GetDeltaStats() const {
+DeltaStats DMSIterator::GetDeltaStats() const {
   DCHECK(initted_) << "Must call Init()";
   return dms_->delta_stats();
 }

@@ -207,7 +207,7 @@ class DeltaFileIterator : public DeltaIterator {
                                          Arena* arena) OVERRIDE;
   string ToString() const OVERRIDE;
   virtual bool HasNext() OVERRIDE;
-  virtual const DeltaStats& GetDeltaStats() const OVERRIDE;
+  virtual DeltaStats GetDeltaStats() const OVERRIDE;
   virtual const DeltaIteratorType GetDeltaIteratorType() const OVERRIDE;
   bool MayHaveDeltas() override;
 

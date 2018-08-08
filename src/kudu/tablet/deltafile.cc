@@ -849,7 +849,7 @@ string DeltaFileIterator::ToString() const {
   return "DeltaFileIterator(" + dfr_->ToString() + ")";
 }
 
-const DeltaStats& DeltaFileIterator::GetDeltaStats() const {
+DeltaStats DeltaFileIterator::GetDeltaStats() const {
   DCHECK(initted_) << "Must call Init()";
   Status s = dfr_->Init();
   if (!s.ok()) {

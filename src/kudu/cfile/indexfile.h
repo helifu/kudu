@@ -70,6 +70,7 @@ public:
   Status Open();
   Status AppendBlock(const DeltaStats* redo_delta_stats,
                      const RowBlock& block);
+  Status Finish(const DeltaStats* redo_delta_stats);
   Status FinishAndReleaseBlocks(const DeltaStats* redo_delta_stats,
                                 ScopedWritableBlockCloser* closer);
   size_t written_size() const;
@@ -104,16 +105,12 @@ private:
   DISALLOW_COPY_AND_ASSIGN(CIndexFileReader);
 
   CIndexFileReader(std::unique_ptr<CFileReader> key_reader,
-                   std::unique_ptr<CFileReader> bitmap_reader,
-                   const std::string& min_encoded_key,
-                   const std::string& max_encoded_key);
+                   std::unique_ptr<CFileReader> bitmap_reader);
 
   Status NewIterator(CFileIterator** key_iter, CFileIterator** bitmap_iter);
 
   std::unique_ptr<CFileReader> key_reader_;
   std::unique_ptr<CFileReader> bitmap_reader_;
-  std::string min_encoded_key_;
-  std::string max_encoded_key_;
 };
 
 class CIndexFileReader::Iterator {

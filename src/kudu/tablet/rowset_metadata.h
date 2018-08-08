@@ -263,6 +263,9 @@ class RowSetMetadataUpdate {
   // We'll need to replace them instead when we start GCing.
   RowSetMetadataUpdate& SetNewUndoBlock(const BlockId& undo_block);
 
+  // 
+  RowSetMetadataUpdate& SetIndexBlocks(const std::map<ColumnId, std::pair<BlockId, BlockId>>& index_blocks);
+
  private:
   friend class RowSetMetadata;
   RowSetMetadata::ColumnIdToBlockIdMap cols_to_replace_;
@@ -277,6 +280,8 @@ class RowSetMetadataUpdate {
 
   std::vector<BlockId> remove_undo_blocks_;
   BlockId new_undo_block_;
+
+  std::map<ColumnId, std::pair<BlockId, BlockId> > index_blocks_;
 
   DISALLOW_COPY_AND_ASSIGN(RowSetMetadataUpdate);
 };

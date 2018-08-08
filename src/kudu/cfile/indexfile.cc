@@ -118,7 +118,7 @@ CIndexFileWriter::~CIndexFileWriter() {
 
 Status CIndexFileWriter::Open() {
   CHECK(col_schema_->is_indexed());
-  LOG(INFO) << "Create index file for " << col_schema_->ToString();
+  LOG(INFO) << "Opened index writer for " << col_schema_->name();
 
   // Key writer
   std::unique_ptr<WritableBlock> key_block;
@@ -149,8 +149,7 @@ Status CIndexFileWriter::Open() {
   RETURN_NOT_OK_PREPEND(bitmap_writer_->Start(), 
         "unable to start bitmap writer for column " + col_schema_->ToString());
 
-  LOG(INFO) << "Generate block ids [" << key_block_id_
-            << "," << bitmap_block_id_ << "]";
+  LOG(INFO) << "Create index blocks {" << key_block_id_ << "," << bitmap_block_id_ << "}";
   return Status::OK();
 }
 
@@ -216,31 +215,15 @@ Status CIndexFileWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
           "unable to AppendEntries (bitmap) to CFile for column " + col_schema_->ToString());
   }
 
-  // Encode and save the min&max value.
-  faststring enc_min_key, enc_max_key;
-  const KeyEncoder<faststring>* key_encoder = &GetKeyEncoder<faststring>(col_schema_->type_info());
-  if (col_schema_->type_info()->physical_type() == BINARY) {
-    Slice min_key(map_.begin()->first);
-    Slice max_key(map_.rbegin()->first);
-    key_encoder->ResetAndEncode(&min_key, &enc_min_key);
-    key_encoder->ResetAndEncode(&max_key, &enc_max_key);
-  } else {
-    key_encoder->ResetAndEncode(map_.begin()->first.c_str(), &enc_min_key);
-    key_encoder->ResetAndEncode(map_.rbegin()->first.c_str(), &enc_max_key);
-  }
-
-  key_writer_->AddMetadataPair(tablet::DiskRowSet::kMinKeyMetaEntryName, enc_min_key);
-  key_writer_->AddMetadataPair(tablet::DiskRowSet::kMaxKeyMetaEntryName, enc_max_key);
-
   // Finish writer.
   RETURN_NOT_OK_PREPEND(key_writer_->FinishAndReleaseBlock(closer),
         "unable to finish key_writer for column " + col_schema_->ToString());
   RETURN_NOT_OK_PREPEND(bitmap_writer_->FinishAndReleaseBlock(closer),
         "unable to finish bitmap_writer for column " + col_schema_->ToString());
 
-  LOG(INFO) << "Finish block for column ''" << col_schema_->name()
-            << "' with size("<< key_writer_->written_size()
-            << "," << bitmap_writer_->written_size() << ")";
+  LOG(INFO) << "Closed index writer for " << col_schema_->name()
+            << " with size{"<< key_writer_->written_size()
+            << "," << bitmap_writer_->written_size() << "}";
 
   has_finished_ = true;
   return Status::OK();
@@ -289,10 +272,17 @@ Status CMultiIndexFileWriter::Open() {
 }
 
 Status CMultiIndexFileWriter::AppendBlock(const DeltaStats* redo_delta_stats, const RowBlock& block) {
-  if (redo_delta_stats->delete_count() != 0) return Status::OK();
+  if (redo_delta_stats->delete_count() != 0) {
+    LOG(INFO) << "Skip appending block because of delete flag";
+    return Status::OK();
+  }
+
   for (int i = 0; i < schema_->num_columns(); ++i) {
     if (schema_->column(i).is_indexed()) {
-      if (redo_delta_stats->update_count_for_col_id(schema_->column_id(i)) != 0) continue;
+      if (redo_delta_stats->update_count_for_col_id(schema_->column_id(i)) != 0) {
+        LOG(INFO) << "Skip appending block on " << schema_->column(i).name() << " because of update flag";
+        continue;
+      }
       const ColumnId& col_id = schema_->column_id(i);
       CIndexFileWriter* writer = FindOrDie(writers_, col_id).get();
       const ColumnBlock& column_block = block.column_block(i);
@@ -304,11 +294,24 @@ Status CMultiIndexFileWriter::AppendBlock(const DeltaStats* redo_delta_stats, co
   return Status::OK();
 }
 
+Status CMultiIndexFileWriter::Finish(const DeltaStats* redo_delta_stats) {
+  ScopedWritableBlockCloser closer;
+  RETURN_NOT_OK(FinishAndReleaseBlocks(redo_delta_stats, &closer));
+  return closer.CloseBlocks();
+}
+
 Status CMultiIndexFileWriter::FinishAndReleaseBlocks(const DeltaStats* redo_delta_stats, ScopedWritableBlockCloser* closer) {
-  if (redo_delta_stats->delete_count() != 0) return Status::OK();
+  if (redo_delta_stats->delete_count() != 0) {
+    LOG(INFO) << "Discard the block because of delete flag";
+    return Status::OK();
+  }
+
   for (int i = 0; i < schema_->num_columns(); ++i) {
     if (schema_->column(i).is_indexed()) {
-      if (redo_delta_stats->update_count_for_col_id(schema_->column_id(i)) != 0) continue;
+      if (redo_delta_stats->update_count_for_col_id(schema_->column_id(i)) != 0) {
+        LOG(INFO) << "Discard the block on " << schema_->column(i).name() << " because of update flag";
+        continue;
+      }
       const ColumnId& col_id = schema_->column_id(i);
       CIndexFileWriter* writer = FindOrDie(writers_, col_id).get();
       RETURN_NOT_OK(writer->FinishAndReleaseBlocks(closer));
@@ -348,13 +351,9 @@ void CMultiIndexFileWriter::GetFlushedBlocksByColumnId(
 
 //////////////////////////////////////////////////////////////////////////
 CIndexFileReader::CIndexFileReader(std::unique_ptr<CFileReader> key_reader,
-                                   std::unique_ptr<CFileReader> bitmap_reader,
-                                   const std::string& min_encoded_key,
-                                   const std::string& max_encoded_key)
+                                   std::unique_ptr<CFileReader> bitmap_reader)
   : key_reader_(std::move(key_reader))
-  , bitmap_reader_(std::move(bitmap_reader))
-  , min_encoded_key_(min_encoded_key)
-  , max_encoded_key_(max_encoded_key) {
+  , bitmap_reader_(std::move(bitmap_reader)) {
 }
 
 CIndexFileReader::~CIndexFileReader() {
@@ -364,8 +363,7 @@ Status CIndexFileReader::Open(FsManager* fs,
                               std::shared_ptr<MemTracker> parent_mem_tracker,
                               const RowSetMetadata::BlockIdPair& block_ids,
                               std::unique_ptr<CIndexFileReader>* reader) {
-  LOG(INFO) << "Open index file with [" << block_ids.first.ToString()
-            << "," << block_ids.second.ToString() << "]";
+  LOG(INFO) << "Open index blocks {" << block_ids.first.ToString() << "," << block_ids.second.ToString() << "}";
 
   ReaderOptions opts;
   opts.parent_mem_tracker = parent_mem_tracker;
@@ -384,24 +382,7 @@ Status CIndexFileReader::Open(FsManager* fs,
   RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(bitmap_block), opts, &bitmap_reader));
   // Lazy open: the bitmap_reader will be initialized while calling SeekToOrdinal later.
 
-  // Get min&max of the current index.
-  std::string min_encoded_key, max_encoded_key;
-  if (!key_reader->GetMetadataEntry(tablet::DiskRowSet::kMinKeyMetaEntryName, &min_encoded_key)) {
-    return Status::Corruption("No min key found");
-  }
-  if (!key_reader->GetMetadataEntry(tablet::DiskRowSet::kMaxKeyMetaEntryName, &max_encoded_key)) {
-    return Status::Corruption("No max key found");
-  }
-  if (Slice(min_encoded_key).compare(Slice(max_encoded_key)) > 0) {
-    return Status::Corruption(Substitute("error: min $0 > max $1",
-      KUDU_REDACT(Slice(min_encoded_key).ToDebugString()),
-      KUDU_REDACT(Slice(max_encoded_key).ToDebugString())));
-  }
-
-  reader->reset(new CIndexFileReader(std::move(key_reader),
-                                     std::move(bitmap_reader),
-                                     min_encoded_key,
-                                     max_encoded_key));
+  reader->reset(new CIndexFileReader(std::move(key_reader), std::move(bitmap_reader)));
   return Status::OK();
 }
 
@@ -448,9 +429,8 @@ Status CIndexFileReader::Iterator::Pushdown(const ColumnPredicate& predicate, Ro
   case PredicateType::Range:
     return PushdownRange(col_schema, predicate, r);
   case PredicateType::IsNotNull:
-    return Status::OK();
   case PredicateType::IsNull:
-    return Status::NotSupported("IsNull is not support");
+    return Status::NotSupported("not supported");
   default:
     break;
   }
@@ -461,8 +441,7 @@ Status CIndexFileReader::Iterator::Pushdown(const ColumnPredicate& predicate, Ro
 Status CIndexFileReader::Iterator::PushdownEquaility(const ColumnSchema& col_schema,
                                                      const vector<const void*>& values,
                                                      Roaring& r) {
-  /*LOG(INFO) << "Equality for column '" << col_schema.name() 
-            << "' with " << values.size() << " values.";*/
+  //LOG(INFO) << "Equality for column " << col_schema.name();
   size_t n = 1;
   Arena arena(1024, 1*1024*1024);
   const KeyEncoder<faststring>* key_encoder = &GetKeyEncoder<faststring>(col_schema.type_info());
@@ -488,7 +467,7 @@ Status CIndexFileReader::Iterator::PushdownEquaility(const ColumnSchema& col_sch
     bool exact = false;
     Status s = key_iter_->SeekAtOrAfter(key, &exact);
     if (s.IsNotFound() || !exact) {
-      LOG(INFO) << "can not seek the key, next ...";
+      LOG(INFO) << "can not seek the key";
       continue;
     }
 
@@ -516,7 +495,7 @@ Status CIndexFileReader::Iterator::PushdownEquaility(const ColumnSchema& col_sch
 Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
                                                  const ColumnPredicate& predicate,
                                                  Roaring& r) {
-  //LOG(INFO) << "Range for column '" << col_schema.type_info()->name() << "'";
+  //LOG(INFO) << "Range for column " << col_schema.name();
   rowid_t lower_bound_id = 0;
   rowid_t upper_bound_id = UINT_MAX;
   reader_->key_reader_->CountRows(&upper_bound_id);
@@ -541,7 +520,7 @@ Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
     bool exact = false;
     Status s = key_iter_->SeekAtOrAfter(key, &exact);
     if (s.IsNotFound()) {
-      LOG(INFO) << "can not seek the lower key, so set lower bound to upper bound.";
+      LOG(INFO) << "can not seek the lower key";
       lower_bound_id = upper_bound_id;
     } else {
       RETURN_NOT_OK(s);
@@ -557,7 +536,7 @@ Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
     } else {
       entry.assign(reinterpret_cast<const char*>(predicate.raw_upper()), col_schema.type_info()->size());
     }
-    DebugEntry(&col_schema, entry.c_str());
+    //DebugEntry(&col_schema, entry.c_str());
 
     faststring enc_value;
     key_encoder->ResetAndEncode(predicate.raw_upper(), &enc_value);
@@ -568,7 +547,7 @@ Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
     bool exact = false;
     Status s = key_iter_->SeekAtOrAfter(key, &exact);
     if (s.IsNotFound()) {
-      LOG(INFO) << "can not seek the upper key, so still use the number of rows.";
+      LOG(INFO) << "can not seek the upper key";
     } else {
       RETURN_NOT_OK(s);
       upper_bound_id = std::min(upper_bound_id, key_iter_->GetCurrentOrdinal());      
@@ -626,7 +605,7 @@ Status CMultiIndexFileReader::Open(std::shared_ptr<RowSetMetadata> rowset_metada
 }
 
 Status CMultiIndexFileReader::DoOpen() {
-  RowSetMetadata::ColumnIdToBlockIdPairMap block_map = rowset_metadata_->GetIndexBlocksById();
+  RowSetMetadata::ColumnIdToBlockIdPairMap block_map = std::move(rowset_metadata_->GetIndexBlocksById());
   for (const RowSetMetadata::ColumnIdToBlockIdPairMap::value_type& e : block_map) {
     const ColumnId& col_id = e.first;
     const RowSetMetadata::BlockIdPair& block_ids = e.second;
@@ -671,7 +650,7 @@ Status CMultiIndexFileReader::Iterator::Init(ScanSpec* spec, const Schema* proje
       // There is no index for the column:
       //  1) the index creation is later than cfile;
       //  2) the index is invalid while there are mutations;
-      //LOG(INFO) << "the column " << one.first << " has no index yet.";
+      //LOG(INFO) << "the column " << one.first << " has no index yet";
       continue;
     }
 
@@ -684,13 +663,17 @@ Status CMultiIndexFileReader::Iterator::Init(ScanSpec* spec, const Schema* proje
     // Push down predicate and get index-bitmap back.
     Roaring c;
     Status s = reader_iter->Pushdown(one.second, c);
-    if (s.IsNotSupported() && 
-        one.second.predicate_type() == PredicateType::IsNull) {
-      continue; // for IsNotNull.
+    if (s.IsNotSupported()) { // for IsNull & IsNotNull
+      PredicateType type = one.second.predicate_type();
+      if (type == PredicateType::IsNull || 
+          type == PredicateType::IsNotNull) {
+        LOG(INFO) << "predicate type " << (int)type << " is not supported";
+        continue;
+      }
     }
     RETURN_NOT_OK(s);
     if (c.isEmpty()) {
-      //LOG(INFO) << "predicate of "<< one.first << " can not filter any rows, so the result is zero.";
+      LOG(INFO) << "predicate for "<< one.first << " is empty";
       bHasResult_ = false;
       break;
     }
@@ -701,7 +684,7 @@ Status CMultiIndexFileReader::Iterator::Init(ScanSpec* spec, const Schema* proje
     } else {
       c_ &= c; // Logic AND.
       if (c_.isEmpty()) {
-        //LOG(INFO) << "the intersection of the two bitmaps is empty.";
+        LOG(INFO) << "the intersection of the bitmaps is empty";
         bHasResult_ = false;
         break;
       }
@@ -713,7 +696,7 @@ Status CMultiIndexFileReader::Iterator::Init(ScanSpec* spec, const Schema* proje
   reader_iters_.shrink_to_fit();
   //LOG(INFO) << "capture a bitmap: " << c_.toString();
 
-  // Remove the predicates that have index.
+  // Remove the predicates that using index.
   for (auto& name : col_names) {
     spec->RemovePredicate(name);
   }
@@ -737,7 +720,6 @@ Status CMultiIndexFileReader::Iterator::GetBounds(rowid_t* lower_bound_idx,
     uint32_t* arr = arr_.get();
     *lower_bound_idx = arr[0];
     *upper_bound_idx = arr[arr_n_-1] + 1; // Exclusive.
-    //LOG(INFO) << c_.toString() << " " << reader_->rowset_metadata_->ToString();
   }
   return Status::OK();
 }

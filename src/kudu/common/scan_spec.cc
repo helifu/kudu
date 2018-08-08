@@ -114,6 +114,13 @@ string ScanSpec::ToString(const Schema& schema) const {
   return JoinStrings(preds, " AND ");
 }
 
+bool ScanSpec::has_index() const {
+  for (const auto& e : predicates_) {
+    if (e.second.column().is_indexed()) return true;
+  }
+  return false;
+}
+
 void ScanSpec::OptimizeScan(const Schema& schema,
                             Arena* arena,
                             AutoReleasePool* pool,

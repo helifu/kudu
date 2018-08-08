@@ -61,7 +61,6 @@
 #include "kudu/util/env.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/hexdump.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.h"
@@ -863,8 +862,7 @@ void Tablet::ApplyRowOperation(WriteTransactionState* tx_state,
   }
 }
 
-void Tablet::ModifyRowSetTree(const Schema& schema,
-                              const RowSetTree& old_tree,
+void Tablet::ModifyRowSetTree(const RowSetTree& old_tree,
                               const RowSetVector& rowsets_to_remove,
                               const RowSetVector& rowsets_to_add,
                               RowSetTree* new_tree) {
@@ -910,7 +908,7 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
   DCHECK(component_lock_.is_locked());
 
   shared_ptr<RowSetTree> new_tree(new RowSetTree());
-  ModifyRowSetTree(metadata_->schema(), *components_->rowsets,
+  ModifyRowSetTree(*components_->rowsets,
                    to_remove, to_add, new_tree.get());
 
   components_ = new TabletComponents(components_->memrowset, new_tree);
@@ -995,8 +993,7 @@ Status Tablet::ReplaceMemRowSetUnlocked(RowSetsInCompaction *compaction,
                                   mem_trackers_.tablet_tracker,
                                   &new_mrs));
   shared_ptr<RowSetTree> new_rst(new RowSetTree());
-  ModifyRowSetTree(metadata_->schema(),
-                   *components_->rowsets,
+  ModifyRowSetTree(*components_->rowsets,
                    RowSetVector(), // remove nothing
                    { *old_ms }, // add the old MRS
                    new_rst.get());
@@ -1578,13 +1575,6 @@ Status Tablet::DebugDump(vector<string> *lines) {
   }
 
   return Status::OK();
-}
-
-bool Tablet::HasIndexColumnInPredicates(const ScanSpec *spec) const {
-  for (const auto& one : spec->predicates()) {
-    if (one.second.column().is_indexed()) return true;
-  }
-  return false;
 }
 
 Status Tablet::CaptureConsistentIterators(

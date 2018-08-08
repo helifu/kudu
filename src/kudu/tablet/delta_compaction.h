@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/cfile/indexfile.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/deltafile.h"
 
@@ -84,6 +85,9 @@ class MajorDeltaCompaction {
   // back UNDO delta mutations.
   Status OpenUndoDeltaFileWriter();
 
+  // Opens a writer for the index data.
+  Status OpenIndexDataWriter();
+
   // Reads the current base data, applies the deltas, and then writes the new base data.
   // A new delta file is written if not all columns were selected for compaction and some
   // deltas need to be written back into a delta file.
@@ -117,6 +121,7 @@ class MajorDeltaCompaction {
 
   // Outputs:
   gscoped_ptr<MultiColumnWriter> base_data_writer_;
+  gscoped_ptr<cfile::CMultiIndexFileWriter> index_data_writer_;
   // The following two may not be initialized if we don't need to write a delta file.
   gscoped_ptr<DeltaFileWriter> new_redo_delta_writer_;
   BlockId new_redo_delta_block_;

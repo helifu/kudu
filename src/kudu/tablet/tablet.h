@@ -45,7 +45,6 @@
 
 namespace kudu {
 
-class ColumnPredicate;
 class MemTracker;
 class MetricEntity;
 class RowChangeList;
@@ -448,9 +447,6 @@ class Tablet {
   // captured TabletComponents).
   void BulkCheckPresence(WriteTransactionState* tx_state);
 
-  // Return true if there is a predicate for index column.
-  bool HasIndexColumnInPredicates(const ScanSpec *spec) const;
-
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //
   // These iterators are not true snapshot iterators, but they are safe against
@@ -482,8 +478,7 @@ class Tablet {
                        const RowSetMetadataVector& to_add,
                        int64_t mrs_being_flushed);
 
-  static void ModifyRowSetTree(const Schema& schema,
-                               const RowSetTree& old_tree,
+  static void ModifyRowSetTree(const RowSetTree& old_tree,
                                const RowSetVector& rowsets_to_remove,
                                const RowSetVector& rowsets_to_add,
                                RowSetTree* new_tree);

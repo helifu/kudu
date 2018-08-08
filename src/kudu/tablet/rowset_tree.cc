@@ -30,7 +30,6 @@
 #include "kudu/util/interval_tree.h"
 #include "kudu/util/interval_tree-inl.h"
 #include "kudu/util/slice.h"
-#include "kudu/util/hexdump.h"
 
 using std::vector;
 using std::shared_ptr;
