@@ -146,7 +146,7 @@ DeltaStats DeltaIteratorMerger::GetDeltaStats() const {
   for (const unique_ptr<DeltaIterator> &iter : iters_) {
     if (iter->GetDeltaIteratorType() == ITERATOR_DRS_UNDO) continue;
     stats += iter->GetDeltaStats();
-    LOG(INFO) << iter->GetDeltaStats().ToString();
+    //LOG(INFO) << iter->GetDeltaStats().ToString();
   }
   return std::move(stats);
 }

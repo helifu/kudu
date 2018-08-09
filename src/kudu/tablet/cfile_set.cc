@@ -347,7 +347,7 @@ Status CFileSet::Iterator::Init_Index(ScanSpec *spec, const DeltaStats& stats) {
   CHECK(projection_->has_index());
 
   // Skip if there is delete mutation.
-  LOG(INFO) << base_data_->ToString() << "," << stats.ToString();
+  //LOG(INFO) << base_data_->ToString() << "," << stats.ToString();
   if (stats.delete_count()) {
     LOG(INFO) << "Cannot use index because of delete flag";
     return Status::OK();

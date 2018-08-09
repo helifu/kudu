@@ -435,7 +435,7 @@ Status CIndexFileReader::Iterator::Pushdown(const ColumnPredicate& predicate, Ro
     break;
   }
 
-  return Status::RuntimeError("should not be here.");
+  return Status::RuntimeError("should not be here");
 }
 
 Status CIndexFileReader::Iterator::PushdownEquaility(const ColumnSchema& col_schema,
