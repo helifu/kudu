@@ -83,7 +83,8 @@ private:
 
   typedef boost::container::flat_map<ColumnId, std::unique_ptr<CIndexFileWriter>> ColumnIdToWriterMap;
   ColumnIdToWriterMap writers_;
-  rowid_t written_count_;
+  rowid_t written_row_count_;
+  size_t written_size_;
 };
 
 class CIndexFileReader {

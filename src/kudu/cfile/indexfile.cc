@@ -231,8 +231,7 @@ Status CIndexFileWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
 
 size_t CIndexFileWriter::written_size() const {
   if (!has_finished_) return 0;
-  return key_writer_->written_size() +
-         bitmap_writer_->written_size();
+  return key_writer_->written_size() + bitmap_writer_->written_size();
 }
 
 Status CIndexFileWriter::GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) const {
@@ -249,7 +248,8 @@ Status CIndexFileWriter::GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) cons
 CMultiIndexFileWriter::CMultiIndexFileWriter(FsManager* fs, const Schema* schema)
 : fs_(fs)
 , schema_(schema)
-, written_count_(0) {
+, written_row_count_(0)
+, written_size_(0) {
 }
 
 CMultiIndexFileWriter::~CMultiIndexFileWriter() {
@@ -286,11 +286,11 @@ Status CMultiIndexFileWriter::AppendBlock(const DeltaStats* redo_delta_stats, co
       const ColumnId& col_id = schema_->column_id(i);
       CIndexFileWriter* writer = FindOrDie(writers_, col_id).get();
       const ColumnBlock& column_block = block.column_block(i);
-      RETURN_NOT_OK(writer->Append(written_count_, column_block.data(), column_block.nrows()));
+      RETURN_NOT_OK(writer->Append(written_row_count_, column_block.data(), column_block.nrows()));
     }
   }
 
-  written_count_ += block.nrows();
+  written_row_count_ += block.nrows();
   return Status::OK();
 }
 
@@ -315,21 +315,14 @@ Status CMultiIndexFileWriter::FinishAndReleaseBlocks(const DeltaStats* redo_delt
       const ColumnId& col_id = schema_->column_id(i);
       CIndexFileWriter* writer = FindOrDie(writers_, col_id).get();
       RETURN_NOT_OK(writer->FinishAndReleaseBlocks(closer));
+      written_size_ += writer->written_size();
     }
   }
   return Status::OK();
 }
 
 size_t CMultiIndexFileWriter::written_size() const {
-  size_t size = 0;
-  for (int i = 0; i < schema_->num_columns(); ++i) {
-    if (schema_->column(i).is_indexed()) {
-      const ColumnId& col_id = schema_->column_id(i);
-      CIndexFileWriter* writer = FindOrDie(writers_, col_id).get();
-      size += writer->written_size();
-    }
-  }
-  return size;
+  return written_size_;
 }
 
 void CMultiIndexFileWriter::GetFlushedBlocksByColumnId(
@@ -467,7 +460,7 @@ Status CIndexFileReader::Iterator::PushdownEquaility(const ColumnSchema& col_sch
     bool exact = false;
     Status s = key_iter_->SeekAtOrAfter(key, &exact);
     if (s.IsNotFound() || !exact) {
-      LOG(INFO) << "can not seek the key";
+      //LOG(INFO) << "can not seek the key";
       continue;
     }
 
@@ -520,7 +513,7 @@ Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
     bool exact = false;
     Status s = key_iter_->SeekAtOrAfter(key, &exact);
     if (s.IsNotFound()) {
-      LOG(INFO) << "can not seek the lower key";
+      //LOG(INFO) << "can not seek the lower key";
       lower_bound_id = upper_bound_id;
     } else {
       RETURN_NOT_OK(s);
@@ -547,7 +540,7 @@ Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
     bool exact = false;
     Status s = key_iter_->SeekAtOrAfter(key, &exact);
     if (s.IsNotFound()) {
-      LOG(INFO) << "can not seek the upper key";
+      //LOG(INFO) << "can not seek the upper key";
     } else {
       RETURN_NOT_OK(s);
       upper_bound_id = std::min(upper_bound_id, key_iter_->GetCurrentOrdinal());      
@@ -667,13 +660,13 @@ Status CMultiIndexFileReader::Iterator::Init(ScanSpec* spec, const Schema* proje
       PredicateType type = one.second.predicate_type();
       if (type == PredicateType::IsNull || 
           type == PredicateType::IsNotNull) {
-        LOG(INFO) << "predicate type " << (int)type << " is not supported";
+        //LOG(INFO) << "predicate type " << (int)type << " is not supported";
         continue;
       }
     }
     RETURN_NOT_OK(s);
     if (c.isEmpty()) {
-      LOG(INFO) << "predicate for "<< one.first << " is empty";
+      //LOG(INFO) << "predicate for "<< one.first << " is empty";
       bHasResult_ = false;
       break;
     }
@@ -684,7 +677,7 @@ Status CMultiIndexFileReader::Iterator::Init(ScanSpec* spec, const Schema* proje
     } else {
       c_ &= c; // Logic AND.
       if (c_.isEmpty()) {
-        LOG(INFO) << "the intersection of the bitmaps is empty";
+        //LOG(INFO) << "the intersection of the bitmaps is empty";
         bHasResult_ = false;
         break;
       }

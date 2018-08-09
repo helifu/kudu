@@ -306,9 +306,8 @@ size_t DiskRowSetWriter::written_size() const {
     size += ad_hoc_index_writer_->written_size();
   }
 
-  // Because the index data is in the memory before flush,
-  // so the size here has two values: 
-  //    zero before flush | non-zero after flush.
+  // Is it necessary to add index size to total size?
+  // The size of index data is always zero before Finish.
   if (index_writer_) {
     size += index_writer_->written_size();
   }
