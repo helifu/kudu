@@ -15,108 +15,26 @@ namespace cfile {
 
 using strings::Substitute;
 
-
-void DebugEntry(const ColumnSchema* col_schema, const char* val) {
-  switch (col_schema->type_info()->type()) {
-  case BOOL:
-    {
-      bool v = (val[0]!=0?true:false);
-      LOG(INFO) << "    (" << (v?"true":"false") << ")";
-      break;
-    }
-  case UINT8:
-    {
-      uint8_t v = val[0];
-      LOG(INFO) << "    (" << v << ")";
-      break;
-    }
-  case INT8:
-    {
-      int8_t v = val[0];
-      LOG(INFO) << "    (" << v << ")";
-      break;
-    }
-  case UINT16:
-    {
-      uint16_t v;
-      memcpy(&v, val, sizeof(v));
-      LOG(INFO) << "    (" << v << ")";
-      break;
-    }
-  case INT16:
-    {
-      int16_t v;
-      memcpy(&v, val, sizeof(v));
-      LOG(INFO) << "    (" << v << ")";
-      break;
-    }
-  case UINT32:
-    {
-      uint32_t v;
-      memcpy(&v, val, sizeof(v));
-      LOG(INFO) << "    (" << v << ")";
-      break;
-    }
-  case INT32:
-    {
-      int32_t v;
-      memcpy(&v, val, sizeof(v));
-      LOG(INFO) << "    (" << v << ")";
-      break;
-    }
-  case UINT64:
-  case UNIXTIME_MICROS:
-    {
-      uint64_t v;
-      memcpy(&v, val, sizeof(v));
-      LOG(INFO) << "    (" << v << ")";
-      break;
-    }
-  case INT64:
-    {
-      int64_t v;
-      memcpy(&v, val, sizeof(v));
-      LOG(INFO) << "    (" << v << ")";
-      break;
-    }
-  case FLOAT:
-    {
-      float v;
-      memcpy(&v, val, sizeof(v));
-      LOG(INFO) << "    (" << v << ")";
-      break;
-    }
-  case DOUBLE:
-    {
-      double v;
-      memcpy(&v, val, sizeof(v));
-      LOG(INFO) << "    (" << v << ")";
-      break;
-    }
-  case STRING:
-  case BINARY:
-    {
-      LOG(INFO) << "    (" << val << ")";
-      break;
-    }
-  default:
-    {
-      LOG(WARNING) << "Unknown entry type:" << col_schema->type_info()->type();
-      break;
-    }
-  }
+CIndexFileWriterBase::CIndexFileWriterBase() {
 }
 
-CIndexFileWriter::CIndexFileWriter(FsManager* fs, const ColumnSchema* col_schema)
+CIndexFileWriterBase::~CIndexFileWriterBase() {
+}
+
+//////////////////////////////////////////////////////////////////////////
+template <typename T>
+CIndexFileWriterT<T>::CIndexFileWriterT(FsManager* fs, const ColumnSchema* col_schema)
 : fs_(fs)
 , col_schema_(col_schema)
 , has_finished_(false) {
 }
 
-CIndexFileWriter::~CIndexFileWriter() {
+template <typename T>
+CIndexFileWriterT<T>::~CIndexFileWriterT() {
 }
 
-Status CIndexFileWriter::Open() {
+template <typename T>
+Status CIndexFileWriterT<T>::Open() {
   CHECK(col_schema_->is_indexed());
   LOG(INFO) << "Opened index writer for " << col_schema_->name();
 
@@ -153,66 +71,37 @@ Status CIndexFileWriter::Open() {
   return Status::OK();
 }
 
-Status CIndexFileWriter::Append(rowid_t id, const void* entries, size_t count) {
-  //LOG(INFO) << "Append " << count << " entries from " << id;
-  const uint8_t* vals = reinterpret_cast<const uint8_t*>(entries);
+template <typename T>
+Status CIndexFileWriterT<T>::Append(rowid_t id, const void* entries, size_t count) {
+  const T* vals = reinterpret_cast<const T*>(entries);
   while (count--) {
-    std::string entry;
-    if (col_schema_->type_info()->physical_type() == BINARY) {
-      const Slice* val = reinterpret_cast<const Slice*>(vals);
-      entry.assign(reinterpret_cast<const char*>(val->data()), val->size());
-      vals += sizeof(Slice);
-    } else {
-      size_t size = col_schema_->type_info()->size();
-      const char* val = reinterpret_cast<const char*>(vals);
-      entry.assign(val, size);
-      vals += size;
+    typename KeyToRoaringMap::iterator iter = map_.find(*vals);
+    if (iter == map_.end()) {
+      std::unique_ptr<Roaring> r(new Roaring());
+      iter = map_.insert(typename KeyToRoaringMap::value_type(*vals, std::move(r))).first;
     }
-    //DebugEntry(col_schema_, entry.c_str());
-
-    RETURN_NOT_OK_PREPEND(Append(entry, id++),
-      "unable to Append for column " + col_schema_->ToString());
+    iter->second->add(id++);
+    vals++;
   }
 
   return Status::OK();
 }
 
-Status CIndexFileWriter::Append(const std::string& entry, rowid_t id) {
-  KeyToRoaringMap::iterator iter = map_.find(entry);
-  if (iter == map_.end()) {
-    std::unique_ptr<Roaring> c(new Roaring());
-    iter = map_.insert(KeyToRoaringMap::value_type(std::move(entry), std::move(c))).first;
-  }
+template <typename T>
+Status CIndexFileWriterT<T>::FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer) {
+  // Flush to Disk.
+  Arena arena(32*1024, 1*1024*1024);
+  for (const auto& e : map_) {
+    T key = e.first;
+    Roaring* r = e.second.get();
+    r->runOptimize();
+    size_t size = r->getSizeInBytes(false);
+    char* buff = static_cast<char*>(arena.AllocateBytes(size));
+    r->write(buff, false);
+    Slice bitmap(buff, size);
 
-  iter->second->add(id);
-  return Status::OK();
-}
-
-Status CIndexFileWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer) {
-  KeyToRoaringMap::const_iterator iter;
-  for (iter = map_.begin(); iter != map_.end(); ++iter) {
-    // Flush Key: the CFileWriter will encode the key for the validx_tree.
-    if (col_schema_->type_info()->physical_type() == BINARY) {
-      Slice key(iter->first);
-      RETURN_NOT_OK_PREPEND(key_writer_->AppendEntries(&key, 1), 
-        "unable to AppendEntries (&key) to CFile for column " + col_schema_->ToString());
-    } else {
-      const void* key = reinterpret_cast<const void*>(iter->first.c_str());
-      RETURN_NOT_OK_PREPEND(key_writer_->AppendEntries(key, 1),
-        "unable to AppendEntries (key) to CFile for column " + col_schema_->ToString());
-    }
-    //DebugEntry(col_schema_, iter->first.c_str());
-
-    // Flush Bitmap.
-    Roaring* c = iter->second.get();
-    //LOG(INFO) << c->toString();
-    c->runOptimize();
-    size_t size = c->getSizeInBytes(false);
-    std::unique_ptr<char> buff(new char[size]);
-    c->write(buff.get(), false);
-    Slice bitmap(buff.get(), size);
-    RETURN_NOT_OK_PREPEND(bitmap_writer_->AppendEntries(&bitmap, 1),
-          "unable to AppendEntries (bitmap) to CFile for column " + col_schema_->ToString());
+    RETURN_NOT_OK(key_writer_->AppendEntries(&key, 1));
+    RETURN_NOT_OK(bitmap_writer_->AppendEntries(&bitmap, 1));
   }
 
   // Finish writer.
@@ -229,13 +118,130 @@ Status CIndexFileWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   return Status::OK();
 }
 
-size_t CIndexFileWriter::written_size() const {
+template <typename T>
+size_t CIndexFileWriterT<T>::written_size() const {
   if (!has_finished_) return 0;
   return key_writer_->written_size() + bitmap_writer_->written_size();
 }
 
-Status CIndexFileWriter::GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) const {
-  if (!has_finished_) return Status::Aborted("not finished");;
+template <typename T>
+Status CIndexFileWriterT<T>::GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) const {
+  if (!has_finished_) {
+    return Status::Aborted("not finished");
+  }
+
+  CHECK(!key_block_id_.IsNull());
+  CHECK(!bitmap_block_id_.IsNull());
+
+  ret.first = key_block_id_;
+  ret.second = bitmap_block_id_;
+  return Status::OK();
+}
+
+//////////////////////////////////////////////////////////////////////////
+CIndexFileWriterBinary::CIndexFileWriterBinary(FsManager* fs, const ColumnSchema* col_schema)
+  : fs_(fs)
+  , col_schema_(col_schema)
+  , has_finished_(false)
+  , arena_(new Arena(32*1024, 1*1024*1024)) {
+}
+
+CIndexFileWriterBinary::~CIndexFileWriterBinary() {
+}
+
+Status CIndexFileWriterBinary::Open() {
+  CHECK(col_schema_->is_indexed());
+  LOG(INFO) << "Opened index writer for " << col_schema_->name();
+
+  // Key writer
+  std::unique_ptr<WritableBlock> key_block;
+  RETURN_NOT_OK_PREPEND(fs_->CreateNewBlock(&key_block),
+    "unable to create key block for column " + col_schema_->ToString());
+  key_block_id_.SetId(key_block->id().id());
+  cfile::WriterOptions key_opts;
+  key_opts.write_posidx = false;
+  key_opts.write_validx = true;
+  key_opts.storage_attributes = col_schema_->attributes();
+  key_opts.storage_attributes.compression = NO_COMPRESSION;
+  key_opts.storage_attributes.cfile_block_size = FLAGS_default_index_block_size_bytes;
+  key_writer_.reset(new CFileWriter(key_opts, col_schema_->type_info(), false, std::move(key_block)));
+  RETURN_NOT_OK_PREPEND(key_writer_->Start(), 
+    "unable to start key writer for column " + col_schema_->ToString());
+
+  // Bitmap writer
+  std::unique_ptr<WritableBlock> bitmap_block;
+  RETURN_NOT_OK_PREPEND(fs_->CreateNewBlock(&bitmap_block),
+    "unable to create bitmap block for column " + col_schema_->ToString());
+  bitmap_block_id_.SetId(bitmap_block->id().id());
+  cfile::WriterOptions bitmap_opts;
+  bitmap_opts.write_posidx = true;
+  bitmap_opts.write_validx = false;
+  bitmap_opts.storage_attributes.encoding = PLAIN_ENCODING;
+  bitmap_opts.storage_attributes.compression = NO_COMPRESSION;
+  bitmap_writer_.reset(new CFileWriter(bitmap_opts, GetTypeInfo(BINARY), false, std::move(bitmap_block)));
+  RETURN_NOT_OK_PREPEND(bitmap_writer_->Start(), 
+    "unable to start bitmap writer for column " + col_schema_->ToString());
+
+  LOG(INFO) << "Create index blocks {" << key_block_id_ << "," << bitmap_block_id_ << "}";
+  return Status::OK();
+}
+
+Status CIndexFileWriterBinary::Append(rowid_t id, const void* entries, size_t count) {
+  const Slice* vals = reinterpret_cast<const Slice*>(entries);
+  while (count--) {
+    StringPiece val(reinterpret_cast<const char*>(vals->data()), vals->size());
+    KeyToRoaringMap::iterator iter = map_.find(val);
+    if (iter == map_.end()) {
+      const char* data = CHECK_NOTNULL(reinterpret_cast<const char*>(arena_->AddSlice(*vals)));
+      StringPiece key(data, vals->size());
+      std::unique_ptr<Roaring> r(new Roaring());
+      iter = map_.insert(KeyToRoaringMap::value_type(key, std::move(r))).first;
+    }
+    iter->second->add(id++);
+    vals++;
+  }
+  return Status::OK();
+}
+
+Status CIndexFileWriterBinary::FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer) {
+  // Flush to Disk.
+  for (const auto& e : map_) {
+    Slice key(e.first.data(), e.first.size());
+    Roaring* r = e.second.get();
+    r->runOptimize();
+    size_t size = r->getSizeInBytes(false);
+    char* buff = static_cast<char*>(arena_->AllocateBytes(size));
+    r->write(buff, false);
+    Slice bitmap(buff, size);
+
+    RETURN_NOT_OK(key_writer_->AppendEntries(&key, 1));
+    RETURN_NOT_OK(bitmap_writer_->AppendEntries(&bitmap, 1));
+  }
+
+  // Finish writer.
+  RETURN_NOT_OK_PREPEND(key_writer_->FinishAndReleaseBlock(closer),
+    "unable to finish key_writer for column " + col_schema_->ToString());
+  RETURN_NOT_OK_PREPEND(bitmap_writer_->FinishAndReleaseBlock(closer),
+    "unable to finish bitmap_writer for column " + col_schema_->ToString());
+
+  LOG(INFO) << "Closed index writer for " << col_schema_->name()
+            << " with size{"<< key_writer_->written_size()
+            << "," << bitmap_writer_->written_size() << "}";
+
+  has_finished_ = true;
+  return Status::OK();
+}
+
+size_t CIndexFileWriterBinary::written_size() const {
+  if (!has_finished_) return 0;
+  return key_writer_->written_size() + bitmap_writer_->written_size();
+}
+
+Status CIndexFileWriterBinary::GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) const {
+  if (!has_finished_) {
+    return Status::Aborted("not finished");
+  }
+
   CHECK(!key_block_id_.IsNull());
   CHECK(!bitmap_block_id_.IsNull());
 
@@ -258,12 +264,44 @@ CMultiIndexFileWriter::~CMultiIndexFileWriter() {
 Status CMultiIndexFileWriter::Open() {
   CHECK(writers_.empty());
   for (int i = 0; i < schema_->num_columns(); ++i) {
-    if (schema_->column(i).is_indexed()) {
-      const ColumnSchema& col_schema = schema_->column(i);
-      std::unique_ptr<CIndexFileWriter> writer(new CIndexFileWriter(fs_, &col_schema));
+    const ColumnSchema& col_schema = schema_->column(i);
+    if (col_schema.is_indexed()) {
+      std::unique_ptr<CIndexFileWriterBase> writer;
+      switch (col_schema.type_info()->type()) {
+        case UINT8:
+          writer.reset(new CIndexFileWriterT<uint8_t>(fs_, &col_schema));
+          break;
+        case INT8:
+          writer.reset(new CIndexFileWriterT<int8_t>(fs_, &col_schema));
+          break;
+        case UINT16:
+          writer.reset(new CIndexFileWriterT<uint16_t>(fs_, &col_schema));
+          break;
+        case INT16:
+          writer.reset(new CIndexFileWriterT<int16_t>(fs_, &col_schema));
+          break;
+        case UINT32:
+          writer.reset(new CIndexFileWriterT<uint32_t>(fs_, &col_schema));
+          break;
+        case INT32:
+        case UINT64:
+          writer.reset(new CIndexFileWriterT<uint64_t>(fs_, &col_schema));
+          break;
+        case INT64:
+        case UNIXTIME_MICROS:
+          writer.reset(new CIndexFileWriterT<int64_t>(fs_, &col_schema));
+          break;
+        case BINARY:
+        case STRING:
+          writer.reset(new CIndexFileWriterBinary(fs_, &col_schema));
+          break;
+        default:
+          LOG(ERROR) << "Invalid type:" << col_schema.type_info()->type();
+          return Status::InvalidArgument("Invalid type.");
+      }
+
       RETURN_NOT_OK(writer->Open());
-      const ColumnId& col_id = schema_->column_id(i);
-      writers_[col_id] = std::move(writer);
+      writers_[schema_->column_id(i)] = std::move(writer);
     }
   }
   writers_.shrink_to_fit();
@@ -284,7 +322,7 @@ Status CMultiIndexFileWriter::AppendBlock(const DeltaStats* redo_delta_stats, co
         continue;
       }
       const ColumnId& col_id = schema_->column_id(i);
-      CIndexFileWriter* writer = FindOrDie(writers_, col_id).get();
+      CIndexFileWriterBase* writer = FindOrDie(writers_, col_id).get();
       const ColumnBlock& column_block = block.column_block(i);
       RETURN_NOT_OK(writer->Append(written_row_count_, column_block.data(), column_block.nrows()));
     }
@@ -313,7 +351,7 @@ Status CMultiIndexFileWriter::FinishAndReleaseBlocks(const DeltaStats* redo_delt
         continue;
       }
       const ColumnId& col_id = schema_->column_id(i);
-      CIndexFileWriter* writer = FindOrDie(writers_, col_id).get();
+      CIndexFileWriterBase* writer = FindOrDie(writers_, col_id).get();
       RETURN_NOT_OK(writer->FinishAndReleaseBlocks(closer));
       written_size_ += writer->written_size();
     }
@@ -331,7 +369,7 @@ void CMultiIndexFileWriter::GetFlushedBlocksByColumnId(
   for (int i = 0; i < schema_->num_columns(); ++i) {
     if (schema_->column(i).is_indexed()) {
       const ColumnId& col_id = schema_->column_id(i);
-      CIndexFileWriter* writer = FindOrDie(writers_, col_id).get();
+      CIndexFileWriterBase* writer = FindOrDie(writers_, col_id).get();
       std::pair<BlockId, BlockId> one;
       Status s = writer->GetFlushedBlocks(one);
       if (s.IsAborted()) continue;
@@ -423,6 +461,7 @@ Status CIndexFileReader::Iterator::Pushdown(const ColumnPredicate& predicate, Ro
     return PushdownRange(col_schema, predicate, r);
   case PredicateType::IsNotNull:
   case PredicateType::IsNull:
+  case PredicateType::None:
     return Status::NotSupported("not supported");
   default:
     break;
@@ -440,14 +479,14 @@ Status CIndexFileReader::Iterator::PushdownEquaility(const ColumnSchema& col_sch
   const KeyEncoder<faststring>* key_encoder = &GetKeyEncoder<faststring>(col_schema.type_info());
 
   for (const void* value : values) {
-    string entry;
+    /*string entry;
     if (col_schema.type_info()->physical_type() == BINARY) {
       const Slice* d = reinterpret_cast<const Slice*>(value);
       entry.assign(reinterpret_cast<const char*>(d->data()), d->size());
     } else {
       entry.assign(reinterpret_cast<const char*>(value), col_schema.type_info()->size());
     }
-    //DebugEntry(&col_schema, entry.c_str());
+    DebugEntry(&col_schema, entry.c_str());*/
 
     // Prepare the 'EncodeKey'.
     faststring enc_value;
@@ -495,14 +534,14 @@ Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
   const KeyEncoder<faststring>* key_encoder = &GetKeyEncoder<faststring>(col_schema.type_info());
 
   if (predicate.raw_lower() != nullptr) {
-    string entry;
+    /*string entry;
     if (col_schema.type_info()->physical_type() == BINARY) {
       const Slice* d = reinterpret_cast<const Slice*>(predicate.raw_lower());
       entry.assign(reinterpret_cast<const char*>(d->data()), d->size());
     } else {
       entry.assign(reinterpret_cast<const char*>(predicate.raw_lower()), col_schema.type_info()->size());
     }
-    //DebugEntry(&col_schema, entry.c_str());
+    DebugEntry(&col_schema, entry.c_str());*/
 
     faststring enc_value;
     key_encoder->ResetAndEncode(predicate.raw_lower(), &enc_value);
@@ -522,14 +561,14 @@ Status CIndexFileReader::Iterator::PushdownRange(const ColumnSchema& col_schema,
   }
 
   if (predicate.raw_upper() != nullptr) {
-    string entry;
+    /*string entry;
     if (col_schema.type_info()->physical_type() == BINARY) {
       const Slice* d = reinterpret_cast<const Slice*>(predicate.raw_upper());
       entry.assign(reinterpret_cast<const char*>(d->data()), d->size());
     } else {
       entry.assign(reinterpret_cast<const char*>(predicate.raw_upper()), col_schema.type_info()->size());
     }
-    //DebugEntry(&col_schema, entry.c_str());
+    DebugEntry(&col_schema, entry.c_str());*/
 
     faststring enc_value;
     key_encoder->ResetAndEncode(predicate.raw_upper(), &enc_value);
@@ -659,7 +698,8 @@ Status CMultiIndexFileReader::Iterator::Init(ScanSpec* spec, const Schema* proje
     if (s.IsNotSupported()) { // for IsNull & IsNotNull
       PredicateType type = one.second.predicate_type();
       if (type == PredicateType::IsNull || 
-          type == PredicateType::IsNotNull) {
+          type == PredicateType::IsNotNull ||
+          type == PredicateType::None) {
         //LOG(INFO) << "predicate type " << (int)type << " is not supported";
         continue;
       }

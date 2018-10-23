@@ -32,22 +32,32 @@ using kudu::fs::ScopedWritableBlockCloser;
 using kudu::tablet::RowSetMetadata;
 using kudu::tablet::DeltaStats;
 
-class CIndexFileWriter {
+class CIndexFileWriterBase {
 public:
-  CIndexFileWriter(FsManager* fs, const ColumnSchema* col);
-  ~CIndexFileWriter();
+  virtual Status Open() = 0;
+  virtual Status Append(rowid_t id, const void* entries, size_t count) = 0;
+  virtual Status FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer) = 0;
+  virtual size_t written_size() const = 0;
+  virtual Status GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) const = 0;
 
-  Status Open();
-  Status Append(rowid_t id, const void* entries, size_t count);
-  Status FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer);
-  size_t written_size() const;
+  CIndexFileWriterBase();
+  virtual ~CIndexFileWriterBase();
+};
 
-  Status GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) const;
+template <typename T>
+class CIndexFileWriterT: public CIndexFileWriterBase {
+public:
+  virtual Status Open();
+  virtual Status Append(rowid_t id, const void* entries, size_t count);
+  virtual Status FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer);
+  virtual size_t written_size() const;
+  virtual Status GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) const;
+
+  CIndexFileWriterT(FsManager* fs, const ColumnSchema* col);
+  virtual ~CIndexFileWriterT();
 
 private:
-  DISALLOW_COPY_AND_ASSIGN(CIndexFileWriter);
-
-  Status Append(const std::string& entry, rowid_t id);
+  DISALLOW_COPY_AND_ASSIGN(CIndexFileWriterT);
 
   FsManager* fs_;
   const ColumnSchema* col_schema_;
@@ -58,7 +68,35 @@ private:
   gscoped_ptr<cfile::CFileWriter> key_writer_;
   gscoped_ptr<cfile::CFileWriter> bitmap_writer_;
 
-  typedef std::map<std::string, std::unique_ptr<Roaring>> KeyToRoaringMap;
+  typedef std::map<T, std::unique_ptr<Roaring>> KeyToRoaringMap;
+  KeyToRoaringMap map_;
+};
+
+class CIndexFileWriterBinary: public CIndexFileWriterBase {
+public:
+  virtual Status Open();
+  virtual Status Append(rowid_t id, const void* entries, size_t count);
+  virtual Status FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer);
+  virtual size_t written_size() const;
+  virtual Status GetFlushedBlocks(std::pair<BlockId, BlockId>& ret) const;
+
+  CIndexFileWriterBinary(FsManager* fs, const ColumnSchema* col_schema);
+  virtual ~CIndexFileWriterBinary();
+protected:
+private:
+  DISALLOW_COPY_AND_ASSIGN(CIndexFileWriterBinary);
+
+  FsManager* fs_;
+  const ColumnSchema* col_schema_;
+  bool has_finished_;
+
+  BlockId key_block_id_;
+  BlockId bitmap_block_id_;
+  gscoped_ptr<cfile::CFileWriter> key_writer_;
+  gscoped_ptr<cfile::CFileWriter> bitmap_writer_;
+
+  std::unique_ptr<Arena> arena_;
+  typedef std::map<StringPiece, std::unique_ptr<Roaring>> KeyToRoaringMap;
   KeyToRoaringMap map_;
 };
 
@@ -81,7 +119,7 @@ private:
   FsManager* const fs_;
   const Schema* const schema_;
 
-  typedef boost::container::flat_map<ColumnId, std::unique_ptr<CIndexFileWriter>> ColumnIdToWriterMap;
+  typedef boost::container::flat_map<ColumnId, std::unique_ptr<CIndexFileWriterBase>> ColumnIdToWriterMap;
   ColumnIdToWriterMap writers_;
   rowid_t written_row_count_;
   size_t written_size_;
@@ -169,9 +207,7 @@ public:
   Status GetBounds(rowid_t* lower_bound_idx, rowid_t* upper_bound_idx);
 
   inline bool HasValidBitmap() const {
-    if (bHasResult_ && !c_.isEmpty())
-      return true;
-    return false;
+    return (bHasResult_ && !c_.isEmpty());
   }
   inline void InitializeSelectionVector(rowid_t cur_idx, SelectionVector *sel_vec) {
     uint32_t* arr = arr_.get();
