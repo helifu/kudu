@@ -632,8 +632,32 @@ Before upgrading, you should read the link:release_notes.html[Release Notes] for
 the version of Kudu that you are about to install. Pay close attention to the
 incompatibilities, upgrade, and downgrade notes that are documented there.
 
-NOTE: Currently rolling upgrades are not supported. Please shut down all Kudu services before
-  upgrading the software.
+WARNING: The following upgrade process is only for the scenario of compiling from source code.
+
+. Prepare the software.
+  - Copy the `kudu-tserver`, `kudu-master` and `kudu` binaries from your build directory.
+. Upgrade the kudu-tservers.
+  - Set the unavailable time for every kudu-tserver to a large value (2hours or more) by gflag
+link:configuration_reference.html#kudu-tserver_follower_unavailable_considered_failed_sec[follower_unavailable_considered_failed_sec].
++
+[source,bash]
+----
+./kudu tserver set_flag <tserver> follower_unavailable_considered_failed_sec 7200 --force
+----
+  - Rolling restart kudu-tserver and the gflag above should be reset after every reboot.
++
+[NOTE]
+====
+If the gflag is not reset, kudu-tserver which is restarting would be possibly evicted from the cluster.
+====
+. Upgrade the kudu-masters.
+  - Rolling restart kudu-master.
+. Restore the default gflag value (5 minutes) for every kudu-tserver.
++
+[source,bash]
+----
+./kudu tserver set_flag <tserver> follower_unavailable_considered_failed_sec 300 --force
+----
 
 [[next_steps]]
 == Next Steps
