@@ -632,26 +632,31 @@ Before upgrading, you should read the link:release_notes.html[Release Notes] for
 the version of Kudu that you are about to install. Pay close attention to the
 incompatibilities, upgrade, and downgrade notes that are documented there.
 
-WARNING: The following upgrade process is only relevant when building from source code.
+WARNING: The following upgrade process is only relevant when you have binaries available.
 
 . Prepare the software.
-  - Copy the `kudu-tserver`, `kudu-master` and `kudu` binaries from your build directory.
+  - Place the new `kudu-tserver`, `kudu-master` and `kudu` binaries into the appropriate
+    Kudu binary directory.
 . Upgrade the tablet servers.
-  - Set the unavailable time for every tablet server to a large value (2 hours or more) by gflag
+  - Set the unavailable time for every tablet server to a large value (2x your expected
+    restart time) by gflag
 link:configuration_reference.html#kudu-tserver_follower_unavailable_considered_failed_sec[follower_unavailable_considered_failed_sec].
 +
 [source,bash]
 ----
 ./kudu tserver set_flag <tserver> follower_unavailable_considered_failed_sec 7200
 ----
-  - Restart a tablet server and wait until it is online, then reset the gflag above to be 7200 again.
+  - Restart one tablet server.
+  - Wait for all tablet replicas on the tablet server to finish bootstrapping by viewing
+    /tablets page in the tablet server web UI.
+  - Again raise the `--follower_unavailable_considered_failed_sec` runtime gflag.
 +
 [NOTE]
 ====
-Make sure the restarted tablet server is already online before resetting the gflag.
-If the unavailable time is not extended, restarted tablet servers could be evicted from the cluster.
+If the unavailable time is not extended, Replicas hosted on restarted tablet servers could
+be evicted from the cluster.
 ====
-  - Repeat the previous step for the remaining tablet servers.
+  - Repeat the previous 3 steps for the remaining tablet servers.
   - Restore the default gflag value (5 minutes) for every tablet server.
 +
 [source,bash]
