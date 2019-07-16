@@ -635,12 +635,12 @@ incompatibilities, upgrade, and downgrade notes that are documented there.
 WARNING: The following upgrade process is only relevant when you have binaries available.
 
 . Prepare the software.
-  - Place the new `kudu-tserver`, `kudu-master` and `kudu` binaries into the appropriate
+  - Place the new `kudu-tserver`, `kudu-master`, and `kudu` binaries into the appropriate
     Kudu binary directory.
 . Upgrade the tablet servers.
-  - Set the unavailable time for every tablet server to a large value (2x your expected
-    restart time) by gflag
-link:configuration_reference.html#kudu-tserver_follower_unavailable_considered_failed_sec[follower_unavailable_considered_failed_sec].
+  - Set the `follower_unavailable_considered_failed_sec` configuration to a high value
+    (conservatively, twice the expected restart time) to prevent tablet replicas hosted
+    on restarting tablet servers from being evicted and re-replicated.
 +
 [source,bash]
 ----
@@ -648,16 +648,11 @@ link:configuration_reference.html#kudu-tserver_follower_unavailable_considered_f
 ----
   - Restart one tablet server.
   - Wait for all tablet replicas on the tablet server to finish bootstrapping by viewing
-    /tablets page in the tablet server web UI.
-  - Again raise the `--follower_unavailable_considered_failed_sec` runtime gflag.
-+
-[NOTE]
-====
-If the unavailable time is not extended, Replicas hosted on restarted tablet servers could
-be evicted from the cluster.
-====
+    `/tablets` page in the tablet server web UI.
+  - Restarting the tablet server will have reset the `follower_unavailable_considered_failed_sec`
+    configuration
   - Repeat the previous 3 steps for the remaining tablet servers.
-  - Restore the default gflag value (5 minutes) for every tablet server.
+  - Restore the original gflag value of every tablet server (the default is 5 minutes)
 +
 [source,bash]
 ----
